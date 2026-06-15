@@ -21,7 +21,12 @@ export default function App() {
   const [rangoEnSeleccion, setRangoEnSeleccion] = useState(false); 
 
   useEffect(() => {
-    fetch('http://localhost:8000/informe')
+    //# 🌐 Detecta automáticamente si estás usando el túnel o localhost
+    const apiBaseUrl = window.location.hostname.includes('devtunnels.ms')
+      ? 'https://fs9xp008-8000.use.devtunnels.ms'
+      : 'http://localhost:8000';
+
+    fetch(`${apiBaseUrl}/informe`)
       .then(res => res.json())
       .then(resData => {
         setData(resData);
@@ -30,7 +35,6 @@ export default function App() {
           setSelectedMes(primerMes);
           resetearDiasPorMes(primerMes, resData);
         }
-        loading(false);
         setLoading(false);
       })
       .catch(err => console.error("Error cargando la API: ", err));
@@ -187,7 +191,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* 📅 FRANJA DE DIAS MODIFICADA (SIN SCROLL, SUAVE Y EVITA OPACAR FESTIVOS) */}
+          {/* 📅 FRANJA DE DIAS MODIFICADA */}
           <div className="pt-4 border-t border-slate-100 space-y-3">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs font-bold text-slate-600">
               <span className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg border border-blue-100 shadow-sm">
@@ -203,7 +207,6 @@ export default function App() {
               )}
             </div>
 
-            {/* 🛠️ CONTENEDOR FLEX-WRAP COMPACTO: Elimina el scroll horizontal amoldando los cuadros */}
             <div className="flex flex-wrap gap-1 w-full justify-start select-none">
               {diasCalendario.map((item) => {
                 const dia = item.Dia_Del_Mes;
@@ -215,22 +218,20 @@ export default function App() {
                   <div 
                     key={dia}
                     onClick={() => manejarClickDia(dia)}
-                    // 🔥 RECALIBRACIÓN VISUAL: Más compactos, fondos pastel suaves y domingos respetados en rango
                     className={`flex flex-col items-center justify-center p-1 rounded-md border cursor-pointer transition-all text-center
                       w-[calc(100%/8-4px)] min-w-[30px] sm:w-auto sm:min-w-[34px] h-11 select-none outline-none
                       ${estaEnRango 
                         ? esNoLaboral 
-                          ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold' // Domingo dentro del rango (Naranja claro)
-                          : 'bg-blue-50 border-blue-300 text-blue-700 font-bold'     // Día normal dentro del rango (Azul pastel suave)
+                          ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold' 
+                          : 'bg-blue-50 border-blue-300 text-blue-700 font-bold'    
                         : esNoLaboral 
-                          ? 'bg-amber-50/60 border-amber-200 text-amber-800 hover:bg-amber-100' // Domingo fuera del rango
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'    // Día normal fuera del rango
+                          ? 'bg-amber-50/60 border-amber-200 text-amber-800 hover:bg-amber-100' 
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'    
                       }
                       ${esExtremo && estaEnRango ? 'ring-2 ring-blue-400 ring-offset-0 font-black' : ''}
                     `}
                     style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
-                    {/* Inicial del día */}
                     <span className={`text-[9px] uppercase font-bold tracking-tight mb-0.5 
                       ${estaEnRango 
                         ? esNoLaboral ? 'text-amber-700' : 'text-blue-500' 
@@ -239,8 +240,6 @@ export default function App() {
                     `}>
                       {item.Inicial_Es}
                     </span>
-                    
-                    {/* Número del día */}
                     <span className="text-xs font-extrabold tracking-tighter">{dia}</span>
                   </div>
                 );
@@ -253,7 +252,6 @@ export default function App() {
         <KpiCards filtrados={tecnicosFiltrados} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* El Ranking de Barras */}
           <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <BarChartRanking 
               data={tecnicosFiltrados} 
@@ -262,7 +260,6 @@ export default function App() {
             />
           </div>
 
-          {/* El Gráfico Circular */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <OrderPieChart 
               tecnico={selectedTecnico} 

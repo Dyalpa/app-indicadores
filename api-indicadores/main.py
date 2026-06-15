@@ -6,9 +6,17 @@ from datetime import datetime
 
 app = FastAPI()
 
+# 🌐 Configuración de orígenes permitidos (CORS)
+# Recuerda NO poner una barra diagonal "/" al final de las URLs dentro de esta lista.
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://fs9xp008-5173.use.devtunnels.ms"  # 🚀 Tu nuevo túnel público de React autorizado
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  
+    allow_origins=origins,  # Carga la lista de dominios autorizados
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
