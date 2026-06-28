@@ -44,8 +44,8 @@ export default function OrderPieChart({ tecnico, todoElDetalle }) {
         </h3>
         <p className="text-xs text-slate-500">
           {tecnico 
-            ? `Tipos de requerimientos atendidos por este técnico.` 
-            : 'Comportamiento general de solicitudes de la empresa.'}
+            ? `Tipos de órdenes atendidas por este técnico.` 
+            : 'Distribución general de órdenes.'}
         </p>
       </div>
 

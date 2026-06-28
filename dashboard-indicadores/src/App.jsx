@@ -63,8 +63,14 @@ export default function App() {
           </div>
         </div>
 
+        {/* 📊 Modificación aquí: Agregamos la prop tiposOrden sacada directamente de la API */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <ProductivityTable data={tecnicosFiltrados} onSelectTecnico={setters.setSelectedTecnico} seleccionado={filters.selectedTecnico} />
+          <ProductivityTable 
+            data={tecnicosFiltrados} 
+            tiposOrden={data?.filtros_disponibles?.tipos_orden || []} 
+            onSelectTecnico={setters.setSelectedTecnico} 
+            seleccionado={filters.selectedTecnico} 
+          />
         </div>
 
       </div>

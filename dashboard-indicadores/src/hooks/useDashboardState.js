@@ -19,7 +19,7 @@ export function useDashboardState() {
       ? 'https://fs9xp008-8000.use.devtunnels.ms'
       : 'http://localhost:8000';
 
-    fetch(`${apiBaseUrl}/informe`)
+    fetch(`${apiBaseUrl}/api/informe`)
       .then(res => res.json())
       .then(resData => {
         setData(resData);

@@ -56,7 +56,7 @@ export default function BarChartRanking({ data, onSelectTecnico, seleccionado })
         <p className="text-xs text-slate-500">
           {seleccionado 
             ? 'Haz clic nuevamente en la barra azul oscuro para restaurar la vista global.' 
-            : 'Haz clic en la barra de cualquier técnico para aislar sus órdenes en la dona.'}
+            : 'Haz clic en la barra de cualquier técnico para aislar sus órdenes.'}
         </p>
       </div>
 
