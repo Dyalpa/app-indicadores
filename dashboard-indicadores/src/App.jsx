@@ -6,9 +6,9 @@ import Header from './components/Header';
 import FilterPanel from './components/FilterPanel';
 import CalendarFranja from './components/CalendarFranja';
 import KpiCards from './components/KpiCards';
-import BarChartRanking from './components/BarChartRanking';
-import OrderPieChart from './components/OrderPieChart';
-import ProductivityTable from './components/ProductivityTable';
+import BarChartRanking from './features/Productividad/BarChartRanking';
+import OrderPieChart from './features/Productividad/OrderPieChart';
+import ProductivityTable from './features/Productividad/ProductivityTable';
 
 export default function App() {
   // 🧠 Toda la lógica de estados, carga y túneles oculta en el custom Hook

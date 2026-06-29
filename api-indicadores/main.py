@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import productividad
+from routers import reitero
 
 app = FastAPI(title="API Central de Indicadores", version="2.0")
 
@@ -22,6 +23,7 @@ app.add_middleware(
 # 🗺️ Registro de Rutas Modulares
 # Esto monta tu informe actual bajo el prefijo "/api", respondiendo en "/api/informe"
 app.include_router(productividad.router, prefix="/api", tags=["Productividad"])
+app.include_router(reitero.router, prefix="/api", tags=["Reitero"])
 
 @app.get("/")
 def home():
