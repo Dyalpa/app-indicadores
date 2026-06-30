@@ -10,9 +10,24 @@ import BarChartRanking from './features/Productividad/BarChartRanking';
 import OrderPieChart from './features/Productividad/OrderPieChart';
 import ProductivityTable from './features/Productividad/ProductivityTable';
 
+// 📦 IMPORTACIÓN DEL CONTENEDOR MODULAR
+import ReiteroDashboard from './features/Reitero/FiltrosReitero';
+
 export default function App() {
-  // 🧠 Toda la lógica de estados, carga y túneles oculta en el custom Hook
-  const { data, loading, filters, setters, actions } = useDashboardState();
+  const { 
+    data, 
+    loading, 
+    reiteroData, 
+    loadingReitero, 
+    activeTab, 
+    setActiveTab, 
+    // 🔄 Desestructuramos los nuevos objetos independientes del hook
+    filtersProductividad,
+    filtersReitero,
+    settersReitero,
+    actionsProductividad,
+    actionsReitero
+  } = useDashboardState();
 
   if (loading) {
     return (
@@ -23,55 +38,105 @@ export default function App() {
     );
   }
 
-  // ⚡ El procesamiento matemático ocurre en su propia función pura externa
-  const { tecnicosFiltrados, registrosGraficoCircular } = procesarProductividad(data, filters);
-  const diasCalendario = data?.filtros_disponibles?.calendario_por_mes?.[filters.selectedMes] || [];
+  // ⚡ Procesamiento local exclusivo de Productividad (Usa sus propios filtros separados)
+  // ⚡ Procesamiento local exclusivo de Productividad (CORREGIDO: Ahora usa filtersProductividad)
+  const { tecnicosFiltrados, registrosGraficoCircular } = procesarProductividad(data, filtersProductividad);
+  const diasCalendarioProductividad = data?.filtros_disponibles?.calendario_por_mes?.[filtersProductividad.selectedMes] || [];
+  
+  // 📋 Control de Metadatos del Header
+  const metadataActiva = (activeTab === 'REITERO' && reiteroData?.fuente_metadatos)
+    ? reiteroData.fuente_metadatos
+    : data?.fuente_metadatos;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-8 font-sans antialiased">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        <Header fuenteMetadatos={data.fuente_metadatos} />
+        {/* Header Dinámico según la pestaña activa */}
+        <Header fuenteMetadatos={metadataActiva} />
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
-          <FilterPanel 
-            {...filters} 
-            {...setters} 
-            filtrosDisponibles={data.filtros_disponibles} 
-            manejarCambioMes={actions.manejarCambioMes} 
-          />
-
-          <CalendarFranja 
-            diaInicio={filters.diaInicio}
-            diaFin={filters.diaFin}
-            selectedMes={filters.selectedMes}
-            diasCalendario={diasCalendario}
-            manejarClickDia={actions.manejarClickDia}
-            seleccionarMesCompleto={actions.seleccionarMesCompleto}
-          />
+        {/* 📑 MENÚ DE PESTAÑAS */}
+        <div className="flex gap-6 border-b border-slate-200 text-sm font-light px-2">
+          <button 
+            onClick={() => setActiveTab('PRODUCTIVIDAD')}
+            className={`pb-3 tracking-wide transition-all border-b-2 ${
+              activeTab === 'PRODUCTIVIDAD' 
+                ? 'border-blue-600 font-normal text-slate-950' 
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            Productividad General
+          </button>
+          <button 
+            onClick={() => setActiveTab('REITERO')}
+            className={`pb-3 tracking-wide transition-all border-b-2 ${
+              activeTab === 'REITERO' 
+                ? 'border-blue-600 font-normal text-slate-950' 
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            Control de Reiteros
+          </button>
         </div>
 
-        {/* 📈 Renderizado de Componentes de Datos */}
-        <KpiCards filtrados={tecnicosFiltrados} />
+        {/* ========================================================
+            🟢 VISTA 1: PRODUCTIVIDAD GENERAL
+           ======================================================== */}
+        {activeTab === 'PRODUCTIVIDAD' && (
+          <div className="space-y-6">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+              <FilterPanel 
+                {...filtersProductividad} 
+                filtrosDisponibles={data?.filtros_disponibles} 
+                manejarCambioMes={actionsProductividad.manejarCambioMes} 
+              />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <BarChartRanking data={tecnicosFiltrados} onSelectTecnico={setters.setSelectedTecnico} seleccionado={filters.selectedTecnico} />
+              <CalendarFranja 
+                diaInicio={filtersProductividad.diaInicio}
+                diaFin={filtersProductividad.diaFin}
+                selectedMes={filtersProductividad.selectedMes}
+                diasCalendario={diasCalendarioProductividad}
+                manejarClickDia={actionsProductividad.manejarClickDia}
+                seleccionarMesCompleto={actionsProductividad.seleccionarMesCompleto}
+              />
+            </div>
+
+            <KpiCards filtrados={tecnicosFiltrados} />
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <BarChartRanking data={tecnicosFiltrados} onSelectTecnico={filtersProductividad.setSelectedTecnico} seleccionado={filtersProductividad.selectedTecnico} />
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <OrderPieChart tecnico={filtersProductividad.selectedTecnico} todoElDetalle={registrosGraficoCircular} />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <ProductivityTable 
+                data={tecnicosFiltrados} 
+                tiposOrden={data?.filtros_disponibles?.tipos_orden || []} 
+                onSelectTecnico={filtersProductividad.setSelectedTecnico} 
+                seleccionado={filtersProductividad.selectedTecnico} 
+              />
+            </div>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <OrderPieChart tecnico={filters.selectedTecnico} todoElDetalle={registrosGraficoCircular} />
-          </div>
-        </div>
+        )}
 
-        {/* 📊 Modificación aquí: Agregamos la prop tiposOrden sacada directamente de la API */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <ProductivityTable 
-            data={tecnicosFiltrados} 
-            tiposOrden={data?.filtros_disponibles?.tipos_orden || []} 
-            onSelectTecnico={setters.setSelectedTecnico} 
-            seleccionado={filters.selectedTecnico} 
-          />
-        </div>
+        {/* ========================================================
+            🔄 VISTA 2: CONTROL DE REITEROS (ENCAPSULADO)
+           ======================================================== */}
+       {activeTab === 'REITERO' && (
+  <ReiteroDashboard 
+    reiteroData={reiteroData}
+    loadingReitero={loadingReitero}
+    filters={filtersReitero}
+    setters={settersReitero}
+    actions={actionsReitero}          
+    // 🔥 Pasamos SIEMPRE data?.filtros_disponibles como fallback principal e inmutable
+    filtrosDisponibles={data?.filtros_disponibles} 
+  />
+)}
 
       </div>
     </div>

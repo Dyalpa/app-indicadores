@@ -2,10 +2,10 @@ export function procesarProductividad(data, filters) {
   if (!data) return { tecnicosFiltrados: [], registrosGraficoCircular: [] };
 
   const baseDeDatos = data.lineas_productividad_base || [];
-  // 🌟 Obtenemos el catálogo de tipos de orden directamente de la API para inicializarlos
+  // Catalogación de tipos de orden para inicialización por técnico
   const tiposOrdenDisponibles = data.filtros_disponibles?.tipos_orden || [];
   
-  // 1. Filtrado en Cascada (Mantenido tal cual)
+  // 1. Filtrado en Cascada (Productividad)
   let filtrados = baseDeDatos.filter(r => r.Mes === filters.selectedMes);
 
   if (filters.selectedDepto) filtrados = filtrados.filter(r => r.Departamento === filters.selectedDepto);
@@ -19,7 +19,7 @@ export function procesarProductividad(data, filters) {
 
   filtrados = filtrados.filter(r => r.Dia_Del_Mes >= filters.diaInicio && r.Dia_Del_Mes <= filters.diaFin);
 
-  // 2. Datos para Gráfico circular (Mantenido tal cual)
+  // 2. Datos para Gráfico circular
   let registrosGraficoCircular = filtrados;
   if (filters.selectedTecnico) {
     registrosGraficoCircular = filtrados.filter(r => r.Nombre_Tecnico === filters.selectedTecnico);
@@ -34,10 +34,9 @@ export function procesarProductividad(data, filters) {
         Departamento: curr.Departamento,
         Mes: filters.selectedMes,
         Total_Ordenes: 0,
-        Facturacion_Total: 0,  // 💵 Acumulador financiero
-        Baremos_Totales: 0,    // 📊 Acumulador de esfuerzo (baremos)
+        Facturacion_Total: 0, 
+        Baremos_Totales: 0,   
         diasSet: new Set(),
-        // 🌟 Inicializamos cada tipo de orden disponible en 0 para este técnico
         tipos_orden: {}
       };
       tiposOrdenDisponibles.forEach(tipo => {
@@ -46,11 +45,10 @@ export function procesarProductividad(data, filters) {
     }
     
     acc[llave].Total_Ordenes += curr.Cantidad;
-    acc[llave].Facturacion_Total += curr.Total_Dinero || 0;  // 💵 Suma el dinero calculado por la API
-    acc[llave].Baremos_Totales += curr.Total_Baremos || 0;    // 📊 Suma los baremos calculados por la API
+    acc[llave].Facturacion_Total += curr.Total_Dinero || 0; 
+    acc[llave].Baremos_Totales += curr.Total_Baremos || 0;   
     acc[llave].diasSet.add(curr.Dia_Del_Mes);
     
-    // 🌟 Sumamos las órdenes correspondientes a este tipo específico
     if (acc[llave].tipos_orden[curr.Tipo_de_orden] !== undefined) {
       acc[llave].tipos_orden[curr.Tipo_de_orden] += curr.Cantidad;
     } else {
@@ -69,18 +67,41 @@ export function procesarProductividad(data, filters) {
       Mes: t.Mes,
       Dias_Trabajados: diasTrabajados,
       Total_Ordenes: t.Total_Ordenes,
-      Facturacion_Total: Number(t.Facturacion_Total.toFixed(2)), // 💵 Redondeo financiero
-      Baremos_Totales: Number(t.Baremos_Totales.toFixed(2)),     // 📊 Redondeo operativo
+      Facturacion_Total: Number(t.Facturacion_Total.toFixed(2)), 
+      Baremos_Totales: Number(t.Baremos_Totales.toFixed(2)),      
       Promedio_Diario: diasTrabajados > 0 ? Number((t.Total_Ordenes / diasTrabajados).toFixed(2)) : 0,
-      
-      // 🌟 Pasamos el mapa discriminado de tipos de orden listo para la tabla
       tipos_orden: t.tipos_orden
-      
-      // 🚀 ¡AQUÍ ES DONDE VAS A AGREGAR LAS MATEMÁTICAS DE TUS 4 NUEVOS INDICADORES!
-      // Ejemplo: efectividad: ...
-      // Ejemplo: horas_promedio: ...
     };
   }).sort((a, b) => b.Promedio_Diario - a.Promedio_Diario);
 
   return { tecnicosFiltrados, registrosGraficoCircular };
+}
+
+// ========================================================
+// 🔄 FUNCIÓN AJUSTADA: PROCESAR REITERO REACTIVO
+// ========================================================
+export function procesarReitero(reiteroData, filters) {
+  // Si no hay datos de reitero cargados aún, devolvemos la estructura limpia por defecto
+  if (!reiteroData) {
+    return {
+      kpis: { total_averias: 0, total_reiteros: 0, tasa_reitero_global: 0 },
+      tecnicos: [],
+      vision: [],
+      rangos: [],
+      filtros: { departamentos: [], meses: [], calendario_por_mes: {} }
+    };
+  }
+
+  // Retornamos directamente lo procesado por el backend reactivo
+  return {
+    kpis: {
+      total_averias: reiteroData.kpis_globales?.total_averias || 0,
+      total_reiteros: reiteroData.kpis_globales?.total_reiteros || 0,
+      tasa_reitero_global: reiteroData.kpis_globales?.tasa_reitero_global || 0
+    },
+    tecnicos: reiteroData.analisis_tecnicos_reitero || [],
+    vision: reiteroData.segmentacion_vision || [],
+    rangos: reiteroData.distribucion_rangos_dias || [],
+    filtros: reiteroData.filtros_disponibles || { departamentos: [], meses: [], calendario_por_mes: {} }
+  };
 }
