@@ -13,7 +13,7 @@ export function useDashboardState() {
   const [selectedDeptoReitero, setSelectedDeptoReitero] = useState('');
   const [visionCliente, setVisionCliente] = useState(true);
   const [visionTerreno, setVisionTerreno] = useState(false);
-  const [diaInicioReitero, setDiaInicioReitero] = useState(null); // 👈 Empezamos en null para saber si ha sido inicializado
+  const [diaInicioReitero, setDiaInicioReitero] = useState(null); // Empezamos en null para saber si ha sido inicializado
   const [diaFinReitero, setDiaFinReitero] = useState(null);
 
   // 📈 Estados de Productividad
@@ -45,7 +45,7 @@ export function useDashboardState() {
             setDiaInicio(infoMes[0].Dia_Del_Mes);
             setDiaFin(infoMes[infoMes.length - 1].Dia_Del_Mes);
             
-            // 🚀 Inicialización segura para Reitero sin colisionar
+            // Inicialización segura para Reitero sin colisionar
             setDiaInicioReitero(infoMes[0].Dia_Del_Mes);
             setDiaFinReitero(infoMes[infoMes.length - 1].Dia_Del_Mes);
           }
@@ -59,7 +59,7 @@ export function useDashboardState() {
   // 🌊 EFECTO 2: CARGA REACTIVA DE REITERO (CON CONDICIONAL SEGURO)
   // ========================================================
   useEffect(() => {
-    // 🛑 Si la pestaña no es Reitero o aún no se han inicializado los rangos de días, frenamos la petición ficticia
+    // 🛑 Si la pestaña no es Reitero o aún no se han inicializado los rangos de días, frenamos la petición
     if (activeTab !== 'REITERO' || !diaInicioReitero || !diaFinReitero) return;
 
     setLoadingReitero(true);
@@ -83,7 +83,7 @@ export function useDashboardState() {
       })
       .catch(err => {
         console.error("Error en fetch de Reitero: ", err);
-        LoadingReitero(false);
+        setLoadingReitero(false); // 🌟 Corregido de 'LoadingReitero' a 'setLoadingReitero'
       });
   }, [activeTab, selectedMesReitero, selectedDeptoReitero, visionCliente, visionTerreno, diaInicioReitero, diaFinReitero, apiBaseUrl]);
 
@@ -133,9 +133,29 @@ export function useDashboardState() {
     loadingReitero,    
     activeTab,         
     setActiveTab,      
+    
+    // 📈 Filtros de Productividad
     filtersProductividad: { 
-      selectedMes, selectedDepto, selectedTecnico, selectedTipoOrden, selectedTipoDia, diaInicio, diaFin 
+      selectedMes, 
+      selectedDepto, 
+      selectedTecnico, 
+      selectedTipoOrden, 
+      selectedTipoDia, 
+      diaInicio, 
+      diaFin 
     },
+    
+    // 🎯 RECONEXIÓN: Mandamos los setters al componente para revivir los selectores
+    settersProductividad: {
+      setSelectedDepto,
+      setSelectedTecnico,
+      setSelectedTipoOrden,
+      setSelectedTipoDia,
+      setDiaInicio,
+      setDiaFin
+    },
+    
+    // 🔄 Filtros de Reitero
     filtersReitero: { 
       selectedMes: selectedMesReitero, 
       selectedDepto: selectedDeptoReitero, 
@@ -146,15 +166,28 @@ export function useDashboardState() {
     },
     settersReitero: {
       setSelectedDepto: setSelectedDeptoReitero,
-      setVisionCliente,
-      setVisionTerreno,
+      // Interceptamos el set de Cliente: si se activa, apaga Terreno obligatoriamente
+  setVisionCliente: (valor) => {
+    if (valor) {
+      setVisionCliente(true);
+      setVisionTerreno(false);
+    }
+  },
+  
+  // Interceptamos el set de Terreno: si se activa, apaga Cliente obligatoriamente
+  setVisionTerreno: (valor) => {
+    if (valor) {
+      setVisionTerreno(true);
+      setVisionCliente(false);
+    }
+  },
       setDiaInicio: setDiaInicioReitero,
       setDiaFin: setDiaFinReitero
     },
     actionsProductividad: { 
       manejarCambioMes: manejarCambioMesProductividad,
-      manejarClickDia: manejarClickDiaProductividad, // 👈 Inyectado de nuevo para revivir los clics
-      seleccionarMesCompleto: seleccionarMesCompletoProductividad // 👈 Inyectado de nuevo para revivir el botón de mes completo
+      manejarClickDia: manejarClickDiaProductividad, 
+      seleccionarMesCompleto: seleccionarMesCompletoProductividad 
     },
     actionsReitero: { manejarCambioMes: manejarCambioMesReitero }
   };

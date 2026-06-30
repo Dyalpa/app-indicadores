@@ -21,8 +21,8 @@ export default function App() {
     loadingReitero, 
     activeTab, 
     setActiveTab, 
-    // 🔄 Desestructuramos los nuevos objetos independientes del hook
     filtersProductividad,
+    settersProductividad,
     filtersReitero,
     settersReitero,
     actionsProductividad,
@@ -38,22 +38,33 @@ export default function App() {
     );
   }
 
-  // ⚡ Procesamiento local exclusivo de Productividad (Usa sus propios filtros separados)
-  // ⚡ Procesamiento local exclusivo de Productividad (CORREGIDO: Ahora usa filtersProductividad)
+  // ⚡ Procesamiento local exclusivo de Productividad
   const { tecnicosFiltrados, registrosGraficoCircular } = procesarProductividad(data, filtersProductividad);
   const diasCalendarioProductividad = data?.filtros_disponibles?.calendario_por_mes?.[filtersProductividad.selectedMes] || [];
   
-  // 📋 Control de Metadatos del Header
-  const metadataActiva = (activeTab === 'REITERO' && reiteroData?.fuente_metadatos)
-    ? reiteroData.fuente_metadatos
-    : data?.fuente_metadatos;
+  // 📋 Control y Normalización de Metadatos del Header
+  const metadataActiva = (() => {
+    if (activeTab === 'REITERO' && reiteroData?.fuente_metadatos) {
+      const metaReitero = reiteroData.fuente_metadatos;
+      return {
+        // Mapeo directo y preciso usando las llaves confirmadas del backend de Reitero
+        total_registros: metaReitero.total_registros,
+        archivo: metaReitero.fuente ?? "Desconocido",
+        ultima_actualizacion: metaReitero.fecha_actualizacion ?? "N/A"
+      };
+    }
+    return data?.fuente_metadatos;
+  })();
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-8 font-sans antialiased">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Header Dinámico según la pestaña activa */}
-        <Header fuenteMetadatos={metadataActiva} />
+        {/* 🎯 Header Dinámico con metadatos normalizados */}
+        <Header 
+          fuenteMetadatos={metadataActiva} 
+          activeTab={activeTab} 
+        />
 
         {/* 📑 MENÚ DE PESTAÑAS */}
         <div className="flex gap-6 border-b border-slate-200 text-sm font-light px-2">
@@ -85,8 +96,12 @@ export default function App() {
         {activeTab === 'PRODUCTIVIDAD' && (
           <div className="space-y-6">
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+              
               <FilterPanel 
                 {...filtersProductividad} 
+                setSelectedDepto={settersProductividad.setSelectedDepto}
+                setSelectedTipoOrden={settersProductividad.setSelectedTipoOrden}
+                setSelectedTipoDia={settersProductividad.setSelectedTipoDia}
                 filtrosDisponibles={data?.filtros_disponibles} 
                 manejarCambioMes={actionsProductividad.manejarCambioMes} 
               />
@@ -105,7 +120,11 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <BarChartRanking data={tecnicosFiltrados} onSelectTecnico={filtersProductividad.setSelectedTecnico} seleccionado={filtersProductividad.selectedTecnico} />
+                <BarChartRanking 
+                  data={tecnicosFiltrados} 
+                  onSelectTecnico={settersProductividad.setSelectedTecnico} 
+                  seleccionado={filtersProductividad.selectedTecnico} 
+                />
               </div>
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <OrderPieChart tecnico={filtersProductividad.selectedTecnico} todoElDetalle={registrosGraficoCircular} />
@@ -116,7 +135,7 @@ export default function App() {
               <ProductivityTable 
                 data={tecnicosFiltrados} 
                 tiposOrden={data?.filtros_disponibles?.tipos_orden || []} 
-                onSelectTecnico={filtersProductividad.setSelectedTecnico} 
+                onSelectTecnico={settersProductividad.setSelectedTecnico} 
                 seleccionado={filtersProductividad.selectedTecnico} 
               />
             </div>
@@ -126,17 +145,16 @@ export default function App() {
         {/* ========================================================
             🔄 VISTA 2: CONTROL DE REITEROS (ENCAPSULADO)
            ======================================================== */}
-       {activeTab === 'REITERO' && (
-  <ReiteroDashboard 
-    reiteroData={reiteroData}
-    loadingReitero={loadingReitero}
-    filters={filtersReitero}
-    setters={settersReitero}
-    actions={actionsReitero}          
-    // 🔥 Pasamos SIEMPRE data?.filtros_disponibles como fallback principal e inmutable
-    filtrosDisponibles={data?.filtros_disponibles} 
-  />
-)}
+        {activeTab === 'REITERO' && (
+          <ReiteroDashboard 
+            reiteroData={reiteroData}
+            loadingReitero={loadingReitero}
+            filters={filtersReitero}
+            setters={settersReitero}
+            actions={actionsReitero}          
+            filtrosDisponibles={data?.filtros_disponibles} 
+          />
+        )}
 
       </div>
     </div>

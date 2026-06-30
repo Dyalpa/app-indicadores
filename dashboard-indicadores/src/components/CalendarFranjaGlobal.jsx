@@ -1,5 +1,5 @@
 // src/components/CalendarFranjaGlobal.jsx
-import React from 'react';
+import React, { useEffect, useRef } from 'react'; // 👈 Importamos useRef
 
 export default function CalendarFranjaGlobal({ 
   diaInicio, 
@@ -20,23 +20,22 @@ export default function CalendarFranjaGlobal({
     'Julio': 31, 'Agosto': 31, 'Septiembre': 30, 'Octubre': 31, 'Noviembre': 30, 'Diciembre': 31
   };
 
-  // 🇨🇴 Matriz de Festivos 2026 en el Frontend (Doble capa de seguridad si falla el Backend)
+  // 🇨🇴 Matriz de Festivos 2026 en el Frontend
   const FESTIVOS_FRONTEND_2026 = {
-    0: [1, 12],       // Enero: 1 y 12
-    2: [23],          // Marzo: 23
-    3: [2, 3],        // Abril: 2 y 3
-    4: [1, 25],       // Mayo: 1 y 25
-    5: [8, 15, 29],      // Junio: 15 y 22
-    6: [13, 20],          // Julio: 20
-    7: [7, 17],       // Agosto: 7 y 17
-    9: [12],          // Octubre: 12
-    10: [2, 16],      // Noviembre: 2 y 16
-    11: [8, 25]       // Diciembre: 8 y 25
+    0: [1, 12],       
+    2: [23],          
+    3: [2, 3],        
+    4: [1, 25],       
+    5: [8, 15, 29],   
+    6: [13, 20],      
+    7: [7, 17],       
+    9: [12],          
+    10: [2, 16],      
+    11: [8, 25]       
   };
 
   let diasReales = [...(diasCalendario || [])];
   
-  // Si el backend no envía la data limpia o se activa el fallback, calculamos con festivos reales
   if (diasReales.length < 28 || !diasReales.some(d => d.Dia_Del_Mes === 8)) {
     const maxDias = mesesMapeo[selectedMes] || 30;
     const mesIndex = mesesIndices[selectedMes] || 0;
@@ -47,7 +46,6 @@ export default function CalendarFranjaGlobal({
       const fechaReal = new Date(2026, mesIndex, diaNum);
       const numeroDiaSemana = fechaReal.getDay();
       
-      // Verifica si es domingo O si el día está en la lista de festivos de ese mes
       const esDomingo = numeroDiaSemana === 0;
       const diasFestivosDelMes = FESTIVOS_FRONTEND_2026[mesIndex] || [];
       const esFestivoCalendario = esDomingo || diasFestivosDelMes.includes(diaNum);
@@ -60,6 +58,18 @@ export default function CalendarFranjaGlobal({
     });
   }
 
+  // 🎯 SOLUCCIÓN AL REBOUND: Usamos una referencia para saber qué mes se inicializó por última vez
+  const mesInicializadoRef = useRef('');
+
+  useEffect(() => {
+    // Solo forzamos el rango completo si el mes cambió en comparación con la última inicialización
+    if (selectedMes && mesInicializadoRef.current !== selectedMes && diasReales.length > 0) {
+      mesInicializadoRef.current = selectedMes; // Registramos que este mes ya se cuadró
+      setDiaInicio(1);
+      setDiaFin(diasReales[diasReales.length - 1].Dia_Del_Mes);
+    }
+  }, [selectedMes, diasCalendario]); // Ya no depende de diaInicio, evitando bucles al hacer clic
+
   const gestionarClickLocal = (diaNum) => {
     if (diaInicio === diaFin && diaNum > diaInicio) {
       setDiaFin(diaNum);
@@ -71,7 +81,7 @@ export default function CalendarFranjaGlobal({
 
   const seleccionarMesCompletoLocal = () => {
     if (diasReales.length > 0) {
-      setDiaInicio(diasReales[0].Dia_Del_Mes);
+      setDiaInicio(1); 
       setDiaFin(diasReales[diasReales.length - 1].Dia_Del_Mes);
     }
   };
@@ -97,7 +107,6 @@ export default function CalendarFranjaGlobal({
         {diasReales.map((item) => {
           const dia = item.Dia_Del_Mes;
           
-          // Captura flexible y ultra-segura de la propiedad booleana
           const esFestivoReitero = 
             item.Es_Festivo === true || 
             item.es_festivo === true || 

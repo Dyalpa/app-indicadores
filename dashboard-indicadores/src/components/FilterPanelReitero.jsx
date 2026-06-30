@@ -1,4 +1,3 @@
-// src/components/FilterPanelReitero.jsx
 import React from 'react';
 
 export default function FilterPanelReitero({
@@ -14,9 +13,18 @@ export default function FilterPanelReitero({
   setVisionTerreno
 }) {
 
-  const fuenteFiltrosReal = filtrosDisponibles?.calendario_por_mes 
-    ? filtrosDisponibles 
-    : (reiteroData?.filtros_disponibles || {});
+  // Extraemos los filtros base directo de la API
+  const datosFiltroAPI = reiteroData?.filtros_disponibles || {};
+  
+  // Departamentos obtenidos de la API o del prop como respaldo
+  const departamentos = datosFiltroAPI.departamentos || filtrosDisponibles?.departamentos || [];
+  
+  // 🎯 CORRECCIÓN AQUÍ: Usamos Object.keys() si filtrosDisponibles.meses fuera un objeto, 
+  // o simplemente una copia del array si ya viene listo.
+  const mesesDisponibles = datosFiltroAPI.meses || 
+    (filtrosDisponibles?.meses 
+      ? (Array.isArray(filtrosDisponibles.meses) ? filtrosDisponibles.meses : Object.keys(filtrosDisponibles.meses)) 
+      : []);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -28,7 +36,7 @@ export default function FilterPanelReitero({
           onChange={(e) => manejarCambioMes(e.target.value)} 
           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
         >
-          {fuenteFiltrosReal?.meses?.map(m => (
+          {mesesDisponibles.map(m => (
             <option key={`mes-${m}`} value={m}>{m}</option>
           ))}
         </select>
@@ -43,7 +51,7 @@ export default function FilterPanelReitero({
           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
         >
           <option value="">Todos los Departamentos</option>
-          {fuenteFiltrosReal?.departamentos?.map(d => (
+          {departamentos.map(d => (
             <option key={`depto-${d}`} value={d}>{d}</option>
           ))}
         </select>

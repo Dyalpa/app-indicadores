@@ -30,7 +30,7 @@ FESTIVOS_TUPLAS = {
     (2026, 4, 3),   # Viernes Santo
     (2026, 5, 1),   # Día del Trabajo
     (2026, 5, 25),  # Ascensión
-    (2026, 6, 8),  # Corpus Christi
+    (2026, 6, 8),   # Corpus Christi
     (2026, 6, 15),  # Sagrado Corazón
     (2026, 6, 29),  # San Pedro y San Pablo
     (2026, 7, 13),  # Vírgen de Chiquinquirá
@@ -47,6 +47,12 @@ FESTIVOS_TUPLAS = {
 mapa_iniciales = {
     "Monday": "L", "Tuesday": "M", "Wednesday": "M", "Thursday": "J", 
     "Friday": "V", "Saturday": "S", "Sunday": "D"
+}
+
+# Diccionario helper para mapear los números de mes únicos que vengan del DataFrame
+numero_a_mes_nombre = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
 def extraer_origen(texto):
@@ -132,7 +138,13 @@ def informe_reitero(
     ctos_lista = sorted(df_base["TOA_CAJA"].dropna().unique().tolist())
     tecnicos_lista = sorted(df_base["TOA_PROVIDER_SOURCE"].dropna().unique().tolist())
 
-    # --- 📅 GENERACIÓN LIMPIA DEL CALENDARIO (Garantiza 8 y 15 completos) ---
+    # 📊 EXTRACCIÓN DINÁMICA DE MESES CON DATA REAL
+    # Obtenemos los meses numéricos únicos e idóneos presentes en df_base
+    numeros_meses_con_data = sorted(df_base["Mes_Ingreso"].dropna().unique().astype(int).tolist())
+    # Traducimos esos números a sus respectivos nombres de mes estructurados
+    meses_disponibles_lista = [numero_a_mes_nombre[m] for m in numeros_meses_con_data if m in numero_a_mes_nombre]
+
+    # --- 📅 GENERACIÓN LIMPIA DEL CALENDARIO ---
     calendario_por_mes = {}
     for mes_nombre, mes_num in meses_mapeo.items():
         try:
@@ -144,7 +156,7 @@ def informe_reitero(
             for fecha in rango_fechas:
                 nombre_dia_en = fecha.strftime('%A')
                 
-                # 🎯 COMPARACIÓN NUMÉRICA DIRECTA: (Año, Mes, Día)
+                # 🎯 COMPARACIÓN NUMÉRICA DIRECTA
                 tupla_fecha_actual = (int(fecha.year), int(fecha.month), int(fecha.day))
                 
                 es_domingo = (fecha.dayofweek == 6)
@@ -225,7 +237,7 @@ def informe_reitero(
             "origenes_diagnostico": origenes_lista,
             "ctos": ctos_lista,
             "tecnicos": tecnicos_lista,
-            "meses": list(calendario_por_mes.keys()),
+            "meses": meses_disponibles_lista,  # 🎯 Ahora se envía la lista filtrada con data real
             "calendario_por_mes": calendario_por_mes
         },
         "segmentacion_vision": seg_vision.to_dict(orient="records"),

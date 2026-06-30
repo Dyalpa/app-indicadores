@@ -1,7 +1,7 @@
 // src/features/Reitero/FiltrosReitero.jsx
-import React from 'react';
+import React, { useEffect } from 'react'; // 👈 Importamos useEffect
 import FilterPanelReitero from '../../components/FilterPanelReitero';
-import CalendarFranjaGlobal from '../../components/CalendarFranjaGlobal'; // 👈 El nuevo calendario global único
+import CalendarFranjaGlobal from '../../components/CalendarFranjaGlobal'; 
 import KpiCardsReitero from '../../components/KpiCardsReitero';
 import ReiteroTable from './ReiteroTable';
 import { procesarReitero } from '../../utils/dataProcessor';
@@ -12,13 +12,25 @@ export default function FiltrosReitero({
   filters, 
   setters, 
   actions, 
-  filtrosDisponibles // 👈 Esta es la data maestra inmutable que viene de App.jsx
+  filtrosDisponibles 
 }) {
+
+  // 🎯 SINCRONIZACIÓN AUTOMÁTICA DEL MES INICIAL CON LA DATA REAL
+  useEffect(() => {
+    const mesesConData = reiteroData?.filtros_disponibles?.meses;
+    
+    if (mesesConData && mesesConData.length > 0) {
+      // Si el mes seleccionado actualmente (ej: Enero) no tiene data real en el archivo,
+      // forzamos al sistema a moverse al primer mes que sí tenga registros (ej: Junio).
+      if (!mesesConData.includes(filters.selectedMes)) {
+        actions.manejarCambioMes(mesesConData[0]);
+      }
+    }
+  }, [reiteroData, filters.selectedMes, actions]);
 
   const reiteroProcesado = procesarReitero(reiteroData, filters);
 
-  // 🛡️ SOLUCIÓN PARA EL 8 Y 15: Forzamos a que los días vengan SÓLO del catálogo maestro global.
-  // Ignoramos por completo el calendario incompleto que devuelve el endpoint de reitero.
+  // Forzamos a que los días vengan de la data del backend de reitero
   const diasCalendarioReitero = reiteroData?.filtros_disponibles?.calendario_por_mes?.[filters.selectedMes] || [];
 
   return (
@@ -27,7 +39,7 @@ export default function FiltrosReitero({
       {/* CONTENEDOR ÚNICO DE FILTROS SUPERIORES */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
         
-        {/* Panel limpio (Ya no renderiza ninguna franja de días por dentro) */}
+        {/* Panel limpio */}
         <FilterPanelReitero
           selectedMes={filters.selectedMes}
           selectedDepto={filters.selectedDepto}
@@ -41,14 +53,14 @@ export default function FiltrosReitero({
           reiteroData={reiteroData} 
         />
 
-        {/* 📅 ÚNICA FRANJA DE CALENDARIO GLOBAL AUTORIZADA */}
+        {/* 📅 FRANJA DE CALENDARIO GLOBAL */}
         <div className="pt-2 border-t border-slate-100">
           <CalendarFranjaGlobal 
             diaInicio={filters.diaInicio}
             diaFin={filters.diaFin}
             selectedMes={filters.selectedMes}
             setDiaInicio={setters.setDiaInicio}
-            diasCalendario={diasCalendarioReitero} // 👈 Aquí le inyectamos la data limpia del backend de Reitero
+            diasCalendario={diasCalendarioReitero} 
             setDiaFin={setters.setDiaFin}
           />
         </div>
