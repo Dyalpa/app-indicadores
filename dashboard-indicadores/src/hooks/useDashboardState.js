@@ -13,14 +13,16 @@ export function useDashboardState() {
   const [selectedDeptoReitero, setSelectedDeptoReitero] = useState('');
   const [visionCliente, setVisionCliente] = useState(true);
   const [visionTerreno, setVisionTerreno] = useState(false);
-  const [diaInicioReitero, setDiaInicioReitero] = useState(null); // Empezamos en null para saber si ha sido inicializado
+  const [diaInicioReitero, setDiaInicioReitero] = useState(null); 
   const [diaFinReitero, setDiaFinReitero] = useState(null);
 
   // 📈 Estados de Productividad
   const [selectedMes, setSelectedMes] = useState('');
   const [selectedDepto, setSelectedDepto] = useState('');
   const [selectedTecnico, setSelectedTecnico] = useState(null);
-  const [selectedTipoOrden, setSelectedTipoOrden] = useState('');
+  
+  // 🌟 Inicializa como Array para permitir la selección de más de un tipo
+  const [selectedTipoOrden, setSelectedTipoOrden] = useState([]);
   const [selectedTipoDia, setSelectedTipoDia] = useState('');
   const [diaInicio, setDiaInicio] = useState(1);
   const [diaFin, setDiaFin] = useState(31);
@@ -38,14 +40,13 @@ export function useDashboardState() {
         if (resData.filtros_disponibles?.meses?.length > 0) {
           const primerMes = resData.filtros_disponibles.meses[0];
           setSelectedMes(primerMes);
-          setSelectedMesReitero(primerMes); // Seteamos el mes por defecto en Reitero
+          setSelectedMesReitero(primerMes); 
 
           const infoMes = resData?.filtros_disponibles?.calendario_por_mes?.[primerMes] || [];
           if (infoMes.length > 0) {
             setDiaInicio(infoMes[0].Dia_Del_Mes);
             setDiaFin(infoMes[infoMes.length - 1].Dia_Del_Mes);
             
-            // Inicialización segura para Reitero sin colisionar
             setDiaInicioReitero(infoMes[0].Dia_Del_Mes);
             setDiaFinReitero(infoMes[infoMes.length - 1].Dia_Del_Mes);
           }
@@ -56,10 +57,9 @@ export function useDashboardState() {
   }, [apiBaseUrl]);
 
   // ========================================================
-  // 🌊 EFECTO 2: CARGA REACTIVA DE REITERO (CON CONDICIONAL SEGURO)
+  // 🌊 EFECTO 2: CARGA REACTIVA DE REITERO
   // ========================================================
   useEffect(() => {
-    // 🛑 Si la pestaña no es Reitero o aún no se han inicializado los rangos de días, frenamos la petición
     if (activeTab !== 'REITERO' || !diaInicioReitero || !diaFinReitero) return;
 
     setLoadingReitero(true);
@@ -83,7 +83,7 @@ export function useDashboardState() {
       })
       .catch(err => {
         console.error("Error en fetch de Reitero: ", err);
-        setLoadingReitero(false); // 🌟 Corregido de 'LoadingReitero' a 'setLoadingReitero'
+        setLoadingReitero(false); 
       });
   }, [activeTab, selectedMesReitero, selectedDeptoReitero, visionCliente, visionTerreno, diaInicioReitero, diaFinReitero, apiBaseUrl]);
 
@@ -104,11 +104,10 @@ export function useDashboardState() {
     const infoMes = fuente?.calendario_por_mes?.[mes] || [];
     if (infoMes.length > 0) {
       setDiaInicioReitero(infoMes[0].Dia_Del_Mes);
-      setDiaFinReitero(infoMes[infoMes.length - 1].Dia_Del_Mes);
+      setDiaFinPhy(infoMes[infoMes.length - 1].Dia_Del_Mes);
     }
   };
 
-  // ⚡ LÓGICA DE CLICS RESTAURADA PARA PRODUCTIVIDAD
   const manejarClickDiaProductividad = (diaNum) => {
     if (diaInicio === diaFin && diaNum > diaInicio) {
       setDiaFin(diaNum);
@@ -145,11 +144,10 @@ export function useDashboardState() {
       diaFin 
     },
     
-    // 🎯 RECONEXIÓN: Mandamos los setters al componente para revivir los selectores
     settersProductividad: {
       setSelectedDepto,
       setSelectedTecnico,
-      setSelectedTipoOrden,
+      setSelectedTipoOrden, 
       setSelectedTipoDia,
       setDiaInicio,
       setDiaFin
@@ -166,28 +164,25 @@ export function useDashboardState() {
     },
     settersReitero: {
       setSelectedDepto: setSelectedDeptoReitero,
-      // Interceptamos el set de Cliente: si se activa, apaga Terreno obligatoriamente
-  setVisionCliente: (valor) => {
-    if (valor) {
-      setVisionCliente(true);
-      setVisionTerreno(false);
-    }
-  },
-  
-  // Interceptamos el set de Terreno: si se activa, apaga Cliente obligatoriamente
-  setVisionTerreno: (valor) => {
-    if (valor) {
-      setVisionTerreno(true);
-      setVisionCliente(false);
-    }
-  },
+      setVisionCliente: (valor) => {
+        if (valor) {
+          setVisionCliente(true);
+          setVisionTerreno(false);
+        }
+      },
+      setVisionTerreno: (valor) => {
+        if (valor) {
+          setVisionTerreno(true);
+          setVisionCliente(false);
+        }
+      },
       setDiaInicio: setDiaInicioReitero,
       setDiaFin: setDiaFinReitero
     },
     actionsProductividad: { 
       manejarCambioMes: manejarCambioMesProductividad,
       manejarClickDia: manejarClickDiaProductividad, 
-      seleccionarMesCompleto: seleccionarMesCompletoProductividad 
+      seleccionarMesCompleto: seleccionarMesCompletoProductividad  
     },
     actionsReitero: { manejarCambioMes: manejarCambioMesReitero }
   };

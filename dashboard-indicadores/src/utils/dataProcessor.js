@@ -2,14 +2,19 @@ export function procesarProductividad(data, filters) {
   if (!data) return { tecnicosFiltrados: [], registrosGraficoCircular: [] };
 
   const baseDeDatos = data.lineas_productividad_base || [];
-  // Catalogación de tipos de orden para inicialización por técnico
   const tiposOrdenDisponibles = data.filtros_disponibles?.tipos_orden || [];
   
   // 1. Filtrado en Cascada (Productividad)
   let filtrados = baseDeDatos.filter(r => r.Mes === filters.selectedMes);
 
-  if (filters.selectedDepto) filtrados = filtrados.filter(r => r.Departamento === filters.selectedDepto);
-  if (filters.selectedTipoOrden) filtrados = filtrados.filter(r => r.Tipo_de_orden === filters.selectedTipoOrden);
+  if (filters.selectedDepto) {
+    filtrados = filtrados.filter(r => r.Departamento === filters.selectedDepto);
+  }
+  
+  // 🌟 Evaluación adaptada a selección múltiple
+  if (filters.selectedTipoOrden && filters.selectedTipoOrden.length > 0) {
+    filtrados = filtrados.filter(r => filters.selectedTipoOrden.includes(r.Tipo_de_orden));
+  }
   
   if (filters.selectedTipoDia === 'laboral') {
     filtrados = filtrados.filter(r => r.Es_No_Laboral === false);
@@ -78,10 +83,9 @@ export function procesarProductividad(data, filters) {
 }
 
 // ========================================================
-// 🔄 FUNCIÓN AJUSTADA: PROCESAR REITERO REACTIVO
+// 🔄 FUNCIÓN: PROCESAR REITERO REACTIVO
 // ========================================================
 export function procesarReitero(reiteroData, filters) {
-  // Si no hay datos de reitero cargados aún, devolvemos la estructura limpia por defecto
   if (!reiteroData) {
     return {
       kpis: { total_averias: 0, total_reiteros: 0, tasa_reitero_global: 0 },
@@ -92,7 +96,6 @@ export function procesarReitero(reiteroData, filters) {
     };
   }
 
-  // Retornamos directamente lo procesado por el backend reactivo
   return {
     kpis: {
       total_averias: reiteroData.kpis_globales?.total_averias || 0,

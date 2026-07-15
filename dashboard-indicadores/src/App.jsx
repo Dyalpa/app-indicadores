@@ -10,6 +10,8 @@ import BarChartRanking from './features/Productividad/BarChartRanking';
 import OrderPieChart from './features/Productividad/OrderPieChart';
 import ProductivityTable from './features/Productividad/ProductivityTable';
 
+// 🌟 IMPORTACIÓN DEL NUEVO COMPONENTE DE FACTURACIÓN
+import ProductivityPieChart from "./features/Productividad/ProductivityPieChart";
 // 📦 IMPORTACIÓN DEL CONTENEDOR MODULAR
 import ReiteroDashboard from './features/Reitero/FiltrosReitero';
 
@@ -47,7 +49,6 @@ export default function App() {
     if (activeTab === 'REITERO' && reiteroData?.fuente_metadatos) {
       const metaReitero = reiteroData.fuente_metadatos;
       return {
-        // Mapeo directo y preciso usando las llaves confirmadas del backend de Reitero
         total_registros: metaReitero.total_registros,
         archivo: metaReitero.fuente ?? "Desconocido",
         ultima_actualizacion: metaReitero.fecha_actualizacion ?? "N/A"
@@ -78,16 +79,6 @@ export default function App() {
           >
             Productividad General
           </button>
-          <button 
-            onClick={() => setActiveTab('REITERO')}
-            className={`pb-3 tracking-wide transition-all border-b-2 ${
-              activeTab === 'REITERO' 
-                ? 'border-blue-600 font-normal text-slate-950' 
-                : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            Control de Reiteros
-          </button>
         </div>
 
         {/* ========================================================
@@ -102,6 +93,7 @@ export default function App() {
                 setSelectedDepto={settersProductividad.setSelectedDepto}
                 setSelectedTipoOrden={settersProductividad.setSelectedTipoOrden}
                 setSelectedTipoDia={settersProductividad.setSelectedTipoDia}
+                setSelectedTecnico={settersProductividad.setSelectedTecnico}
                 filtrosDisponibles={data?.filtros_disponibles} 
                 manejarCambioMes={actionsProductividad.manejarCambioMes} 
               />
@@ -118,17 +110,29 @@ export default function App() {
 
             <KpiCards filtrados={tecnicosFiltrados} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            {/* 📊 SECCIÓN DE GRÁFICOS REORGANIZADA */}
+            <div className="space-y-6">
+              
+              {/* 1. Ranking de Técnicos (Arriba - Ancho completo) */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <BarChartRanking 
                   data={tecnicosFiltrados} 
                   onSelectTecnico={settersProductividad.setSelectedTecnico} 
                   seleccionado={filtersProductividad.selectedTecnico} 
                 />
               </div>
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <OrderPieChart tecnico={filtersProductividad.selectedTecnico} todoElDetalle={registrosGraficoCircular} />
+
+              {/* 2. Gráficos Circulares (Abajo - Lado a lado en pantallas grandes) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Gráfico Circular Original (Órdenes) */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                  <OrderPieChart tecnico={filtersProductividad.selectedTecnico} todoElDetalle={registrosGraficoCircular} />
+                </div>
+
+                {/* Nuevo Gráfico de Distribución Financiera (Facturación) */}
+                <ProductivityPieChart registrosGraficoCircular={registrosGraficoCircular} />
               </div>
+
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -145,7 +149,7 @@ export default function App() {
         {/* ========================================================
             🔄 VISTA 2: CONTROL DE REITEROS (ENCAPSULADO)
            ======================================================== */}
-        {activeTab === 'REITERO' && (
+        {activeTab === 'REITERO' && false && (
           <ReiteroDashboard 
             reiteroData={reiteroData}
             loadingReitero={loadingReitero}
