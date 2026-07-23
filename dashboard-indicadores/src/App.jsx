@@ -12,8 +12,9 @@ import ProductivityTable from './features/Productividad/ProductivityTable';
 
 // 🌟 IMPORTACIÓN DEL NUEVO COMPONENTE DE FACTURACIÓN
 import ProductivityPieChart from "./features/Productividad/ProductivityPieChart";
-// 📦 IMPORTACIÓN DEL CONTENEDOR MODULAR
-import ReiteroDashboard from './features/Reitero/FiltrosReitero';
+
+// 📦 CAMBIO CLAVE: IMPORTAR EL NUEVO ORQUESTADOR DE SUBPESTAÑAS
+import ReiteroTabsLayout from './features/Reitero/ReiteroTabsLayout';
 
 export default function App() {
   const { 
@@ -79,6 +80,18 @@ export default function App() {
           >
             Productividad General
           </button>
+
+          {/* 🔄 BOTÓN DE REITEROS */}
+          <button 
+            onClick={() => setActiveTab('REITERO')}
+            className={`pb-3 tracking-wide transition-all border-b-2 ${
+              activeTab === 'REITERO' 
+                ? 'border-blue-600 font-normal text-slate-950' 
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            Control de Reiteros
+          </button>
         </div>
 
         {/* ========================================================
@@ -110,7 +123,7 @@ export default function App() {
 
             <KpiCards filtrados={tecnicosFiltrados} />
 
-            {/* 📊 SECCIÓN DE GRÁFICOS REORGANIZADA */}
+            {/* 📊 SECCIÓN DE GRÁFICOS */}
             <div className="space-y-6">
               
               {/* 1. Ranking de Técnicos (Arriba - Ancho completo) */}
@@ -122,7 +135,7 @@ export default function App() {
                 />
               </div>
 
-              {/* 2. Gráficos Circulares (Abajo - Lado a lado en pantallas grandes) */}
+              {/* 2. Gráficos Circulares (Abajo - Lado a lado) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Gráfico Circular Original (Órdenes) */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -147,15 +160,15 @@ export default function App() {
         )}
 
         {/* ========================================================
-            🔄 VISTA 2: CONTROL DE REITEROS (ENCAPSULADO)
+            🔄 VISTA 2: CONTROL DE REITEROS CON SUB-NAVEGACIÓN MÍNIMA
            ======================================================== */}
-        {activeTab === 'REITERO' && false && (
-          <ReiteroDashboard 
+        {activeTab === 'REITERO' && (
+          <ReiteroTabsLayout 
             reiteroData={reiteroData}
             loadingReitero={loadingReitero}
-            filters={filtersReitero}
-            setters={settersReitero}
-            actions={actionsReitero}          
+            filtersReitero={filtersReitero}
+            settersReitero={settersReitero}
+            actionsReitero={actionsReitero}          
             filtrosDisponibles={data?.filtros_disponibles} 
           />
         )}

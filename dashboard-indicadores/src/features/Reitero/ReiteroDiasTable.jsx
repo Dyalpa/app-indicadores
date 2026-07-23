@@ -38,11 +38,11 @@ export default function ReiteroDiasTable({ data = [] }) {
 
       return {
         numeroDia: dia,
-        label: `Día ${dia}`,
+        label: `${dia}`, // Simplificado solo al número para evitar scroll horizontal
         averias,
         reiteros,
-        tasaDelDia: parseFloat(tasaDelDia.toFixed(2)),
-        tasaAcumulada: parseFloat(tasaAcumulada.toFixed(2))
+        tasaDelDia: parseFloat(tasaDelDia.toFixed(1)), // 1 decimal para ahorrar más espacio horizontal
+        tasaAcumulada: parseFloat(tasaAcumulada.toFixed(1))
       };
     });
 
@@ -60,68 +60,63 @@ export default function ReiteroDiasTable({ data = [] }) {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-      {/* Cabecera interna de la tabla */}
-      <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-        <div>
-          <h3 className="text-sm font-bold text-slate-900">📋 Auditoría de Movimiento Diario</h3>
-          <p className="text-[11px] text-slate-400 font-light">Evolución e histórico de jornadas analizadas (Meta: ≤ 7%)</p>
-        </div>
-        <span className="text-[10px] bg-slate-200 text-slate-700 font-semibold px-2 py-1 rounded-md">
-          {columnasDias.length} Columnas
-        </span>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden w-full">
+      {/* 🛠️ Cabecera Simplificada */}
+      <div className="p-4 border-b border-slate-100 bg-white">
+        <h3 className="text-sm font-semibold text-slate-800">Comportamiento Diario de Reitero</h3>
+        <p className="text-[11px] text-slate-400 font-light">Seguimiento diario del mes con regla de meta (≤ 7%)</p>
       </div>
 
-      {/* Tabla con Scroll Horizontal */}
-      <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
-        <table className="w-full text-left border-collapse min-w-max">
+      {/* Contenedor adaptado a todo el ancho sin scroll */}
+      <div className="w-full overflow-hidden">
+        <table className="w-full text-left border-collapse table-fixed">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              {/* Esquina muerta de la tabla fijada a la izquierda */}
-              <th className="p-3 sticky left-0 bg-slate-50 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-slate-200 min-w-[140px]">
-                Métricas / Jornada
+            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              {/* Esquina fija sin necesidad de sticky al no haber scroll */}
+              <th className="p-2 border-r border-slate-150 w-[110px] text-slate-600 bg-slate-50 pl-3">
+                Día del Mes
               </th>
               {columnasDias.map((col) => (
-                <th key={col.numeroDia} className="p-3 text-center min-w-[85px] font-mono text-slate-700 bg-slate-50">
+                <th key={col.numeroDia} className="py-2 px-0.5 text-center font-mono text-slate-700 bg-slate-50 text-[10px] border-b border-slate-200">
                   {col.label}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-xs">
+          <tbody className="divide-y divide-slate-100 text-[10px]">
             
             {/* FILA 1: AVERÍAS */}
-            <tr className="hover:bg-slate-50/50 transition-colors">
-              <td className="p-3 font-medium text-slate-500 bg-slate-50 sticky left-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-slate-200">
+            <tr className="hover:bg-slate-50/40 transition-colors">
+              <td className="p-2 font-medium text-slate-500 bg-slate-50/50 border-r border-slate-150 pl-3">
                 Averías
               </td>
               {columnasDias.map((col) => (
-                <td key={col.numeroDia} className="p-3 text-center text-slate-600 font-mono">
-                  {col.averias.toLocaleString()}
+                <td key={col.numeroDia} className="py-2 px-0.5 text-center text-slate-600 font-mono">
+                  {col.averias}
                 </td>
               ))}
             </tr>
 
             {/* FILA 2: REITEROS */}
-            <tr className="hover:bg-slate-50/50 transition-colors">
-              <td className="p-3 font-medium text-slate-500 bg-slate-50 sticky left-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-slate-200">
+            <tr className="hover:bg-slate-50/40 transition-colors">
+              <td className="p-2 font-medium text-slate-500 bg-slate-50/50 border-r border-slate-150 pl-3">
                 Reiteros
               </td>
               {columnasDias.map((col) => (
-                <td key={col.numeroDia} className="p-3 text-center text-slate-600 font-mono">
-                  {col.reiteros.toLocaleString()}
+                <td key={col.numeroDia} className="py-2 px-0.5 text-center text-slate-600 font-mono">
+                  {col.reiteros}
                 </td>
               ))}
             </tr>
 
-            {/* FILA 3: TASA DIARIA (Semaforizada ≤ 7%) */}
-            <tr className="hover:bg-slate-50/50 transition-colors">
-              <td className="p-3 font-bold text-slate-700 bg-slate-50 sticky left-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-slate-200">
+            {/* FILA 3: TASA DIARIA (Compactada) */}
+            <tr className="hover:bg-slate-50/40 transition-colors">
+              <td className="p-2 font-bold text-slate-700 bg-slate-50/50 border-r border-slate-150 pl-3">
                 Tasa Diaria
               </td>
               {columnasDias.map((col) => (
-                <td key={col.numeroDia} className="p-3 text-center font-bold font-mono">
-                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${
+                <td key={col.numeroDia} className="py-1 px-0.5 text-center font-bold font-mono">
+                  <span className={`inline-block w-full py-0.5 rounded text-[9px] ${
                     col.tasaDelDia > 7.0 
                       ? 'bg-red-50 text-red-700' 
                       : 'bg-green-50 text-green-700'
@@ -132,17 +127,17 @@ export default function ReiteroDiasTable({ data = [] }) {
               ))}
             </tr>
 
-            {/* FILA 4: TASA ACUMULADA (Semaforizada ≤ 7%) */}
-            <tr className="hover:bg-slate-50/50 transition-colors">
-              <td className="p-3 font-bold text-slate-700 bg-slate-50 sticky left-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-slate-200">
-                Tasa Acumulada
+            {/* FILA 4: TASA ACUMULADA (Compactada) */}
+            <tr className="hover:bg-slate-50/40 transition-colors">
+              <td className="p-2 font-bold text-slate-700 bg-slate-50/50 border-r border-slate-150 pl-3">
+                Tasa Acum.
               </td>
               {columnasDias.map((col) => (
-                <td key={col.numeroDia} className="p-3 text-center font-bold font-mono">
-                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${
+                <td key={col.numeroDia} className="py-1 px-0.5 text-center font-bold font-mono">
+                  <span className={`inline-block w-full py-0.5 rounded text-[9px] ${
                     col.tasaAcumulada > 7.0 
-                      ? 'bg-red-100 text-red-800' 
-                      : 'bg-green-100 text-green-800'
+                      ? 'bg-red-100 text-red-850' 
+                      : 'bg-green-100 text-green-850'
                   }`}>
                     {col.tasaAcumulada}%
                   </span>

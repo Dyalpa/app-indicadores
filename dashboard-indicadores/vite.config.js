@@ -10,6 +10,8 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
+    // 🛠️ Forzamos el uso de una única instancia de React para evitar el error de los Hooks en librerías externas
+    dedupe: ['react', 'react-dom'],
     alias: {
       // 2. Definimos que '@' apunte directamente a la carpeta 'src'
       '@': path.resolve(__dirname, './src'),

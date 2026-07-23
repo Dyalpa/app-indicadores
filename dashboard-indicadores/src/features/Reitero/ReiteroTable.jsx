@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx'; // Importamos la librería de Excel
 
-export default function ReiteroTable({ data, globalRate }) {
+export default function ReiteroTable({ data = [], globalRate }) {
   const [busqueda, setBusqueda] = useState('');
 
   // Filtrado reactivo en UI por la caja de búsqueda por Nombre
@@ -8,25 +9,48 @@ export default function ReiteroTable({ data, globalRate }) {
     t.Tecnico && t.Tecnico.toLowerCase().includes(busqueda.toLowerCase())
   );
 
-  const exportarExcelCSV = () => {
+  // ==================== CÁLCULO DE TOTALES ====================
+  const totalAverias = filtradosPorNombre.reduce((acc, row) => acc + (row.Averias_Atendidas || 0), 0);
+  const totalReiteros = filtradosPorNombre.reduce((acc, row) => acc + (row.Reiteros_Causados || 0), 0);
+  const tasaPonderada = totalAverias > 0 
+    ? ((totalReiteros / totalAverias) * 100).toFixed(2) 
+    : '0.00';
+
+  const exportarExcel = () => {
     if (filtradosPorNombre.length === 0) return;
-    const encabezados = ["Tecnico", "Departamento", "Averias Atendidas", "Reiteros Causados", "Tasa Reitero Individual (%)"];
-    const filas = filtradosPorNombre.map(t => [
-      `"${t.Tecnico}"`,
-      `"${t.DEPARTAMENTO}"`,
-      t.Averias_Atendidas,
-      t.Reiteros_Causados,
-      t.Tasa_Reitero_Tecnico
-    ]);
-    const contenidoCsv = "\uFEFF" + [encabezados.join(","), ...filas.map(f => f.join(","))].join("\n");
-    const blob = new Blob([contenidoCsv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Analisis_Reiteros_Tecnicos.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    // Mapeamos los datos para la hoja de Excel
+    const datosMapeados = filtradosPorNombre.map(t => ({
+      'Técnico Responsable': t.Tecnico || 'DESCONOCIDO',
+      'Ubicación': t.DEPARTAMENTO || '',
+      'Averías Atendidas': t.Averias_Atendidas,
+      'Reiteros Causados (Padre)': t.Reiteros_Causados,
+      'Tasa Reitero Individual (%)': parseFloat(t.Tasa_Reitero_Tecnico || 0).toFixed(2) + '%'
+    }));
+
+    // Agregamos la fila de TOTAL al final
+    datosMapeados.push({
+      'Técnico Responsable': 'TOTAL',
+      'Ubicación': '',
+      'Averías Atendidas': totalAverias,
+      'Reiteros Causados (Padre)': totalReiteros,
+      'Tasa Reitero Individual (%)': tasaPonderada + '%'
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(datosMapeados);
+
+    // Ajuste de ancho de columnas para mejor visualización
+    worksheet['!cols'] = [
+      { wch: 30 }, // Técnico
+      { wch: 18 }, // Ubicación
+      { wch: 18 }, // Averías
+      { wch: 22 }, // Reiteros
+      { wch: 22 }  // Tasa
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Analisis Tecnicos');
+    XLSX.writeFile(workbook, 'Analisis_Reiteros_Tecnicos.xlsx');
   };
 
   return (
@@ -42,10 +66,10 @@ export default function ReiteroTable({ data, globalRate }) {
           />
         </div>
         <button 
-          onClick={exportarExcelCSV}
-          className="flex items-center justify-center gap-2 px-4 py-2 border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-medium rounded-xl hover:bg-emerald-100 transition-colors"
+          onClick={exportarExcel}
+          className="flex items-center justify-center gap-2 px-4 py-2 border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-medium rounded-xl hover:bg-emerald-100 transition-colors cursor-pointer"
         >
-          📥 Exportar Técnicos Filtrados
+          📊 Exportar
         </button>
       </div>
 
