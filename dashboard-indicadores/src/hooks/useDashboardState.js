@@ -104,7 +104,8 @@ export function useDashboardState() {
     const infoMes = fuente?.calendario_por_mes?.[mes] || [];
     if (infoMes.length > 0) {
       setDiaInicioReitero(infoMes[0].Dia_Del_Mes);
-      setDiaFinPhy(infoMes[infoMes.length - 1].Dia_Del_Mes);
+      // Corregido aquí: se usa setDiaFinReitero en lugar de setDiaFinPhy
+      setDiaFinReitero(infoMes[infoMes.length - 1].Dia_Del_Mes);
     }
   };
 
