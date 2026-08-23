@@ -22,6 +22,9 @@ export default function App() {
     loading, 
     reiteroData, 
     loadingReitero, 
+    reintentandoReitero,
+    reiteroError,
+    reintentarReitero,
     activeTab, 
     setActiveTab, 
     filtersProductividad,
@@ -166,6 +169,9 @@ export default function App() {
           <ReiteroTabsLayout 
             reiteroData={reiteroData}
             loadingReitero={loadingReitero}
+            reintentandoReitero={reintentandoReitero}
+            reiteroError={reiteroError}
+            reintentarReitero={reintentarReitero}
             filtersReitero={filtersReitero}
             settersReitero={settersReitero}
             actionsReitero={actionsReitero}          

@@ -14,7 +14,8 @@ import LineChartAcumulado from './LineChartAcumulado';
 import ReiteroDiasTable from './ReiteroDiasTable';
 
 export default function ReiteroTabsLayout({
-  reiteroData, loadingReitero, filtersReitero, settersReitero, actionsReitero, filtrosDisponibles
+  reiteroData, loadingReitero, filtersReitero, settersReitero, actionsReitero, filtrosDisponibles,
+  reintentandoReitero, reiteroError, reintentarReitero
 }) {
   const [activeSubTab, setActiveSubTab] = useState('GENERAL');
 
@@ -30,6 +31,10 @@ export default function ReiteroTabsLayout({
   ];
 
   const reiteroProcesado = procesarReitero(reiteroData, filtersReitero);
+
+  // 🔁 Texto del spinner: distingue carga normal de reintento por
+  // inestabilidad del túnel/red (viene desde useDashboardState)
+  const textoReintento = '⚠️ Conexión inestable, reintentando...';
 
   return (
     <div className="space-y-6">
@@ -61,6 +66,23 @@ export default function ReiteroTabsLayout({
         filtrosDisponibles={filtrosDisponibles}
       />
 
+      {/* 🚨 Aviso de datos desactualizados + botón para reintentar el MISMO
+          filtro sin tener que cambiarlo y volver a cambiarlo. */}
+      {reiteroError && !loadingReitero && (
+        <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl p-3">
+          <div className="flex items-start gap-2">
+            <span>🚨</span>
+            <span>{reiteroError}</span>
+          </div>
+          <button
+            onClick={reintentarReitero}
+            className="shrink-0 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors cursor-pointer"
+          >
+            🔄 Reintentar
+          </button>
+        </div>
+      )}
+
       {/* 📊 3. CONTENIDO VARIABLE SEGÚN LA SUBCATEGORÍA SELECCIONADA */}
       <div className="mt-4">
         
@@ -70,7 +92,9 @@ export default function ReiteroTabsLayout({
             {loadingReitero ? (
               <div className="flex h-64 flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 gap-2 shadow-sm">
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-slate-400 font-light text-xs">Procesando matriz de reiteros...</p>
+                <p className={`font-light text-xs ${reintentandoReitero ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                  {reintentandoReitero ? textoReintento : 'Procesando matriz de reiteros...'}
+                </p>
               </div>
             ) : reiteroData ? (
               <div className="space-y-6 animate-fadeIn">
@@ -98,12 +122,23 @@ export default function ReiteroTabsLayout({
 
         {/* === SUB-PESTAÑA: REITERO POR TÉCNICOS === */}
         {activeSubTab === 'TECNICOS' && (
-          <div className="space-y-6 animate-fadeIn">
-            <RankingTecnicosReitero rawData={reiteroData?.reiteros_raw || []} />
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-              <h3 className="text-sm font-semibold text-slate-800">Desglose Detallado</h3>
-              <ReiteroTable data={reiteroProcesado.tecnicos} globalRate={reiteroProcesado.kpis?.tasa_reitero_global} />
-            </div>
+          <div className="animate-fadeIn">
+            {loadingReitero ? (
+              <div className="flex h-64 flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 gap-2 shadow-sm">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className={`font-light text-xs ${reintentandoReitero ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                  {reintentandoReitero ? textoReintento : 'Calculando ranking de técnicos...'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <RankingTecnicosReitero rawData={reiteroData?.reiteros_raw || []} />
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                  <h3 className="text-sm font-semibold text-slate-800">Desglose Detallado</h3>
+                  <ReiteroTable data={reiteroProcesado.tecnicos} globalRate={reiteroProcesado.kpis?.tasa_reitero_global} />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -113,7 +148,9 @@ export default function ReiteroTabsLayout({
             {loadingReitero ? (
               <div className="flex h-64 flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 gap-2 shadow-sm">
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-slate-400 font-light text-xs">Procesando causales...</p>
+                <p className={`font-light text-xs ${reintentandoReitero ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                  {reintentandoReitero ? textoReintento : 'Procesando causales...'}
+                </p>
               </div>
             ) : (
               <CausalReitero causalesData={reiteroData?.causales_analisis} />
@@ -127,7 +164,9 @@ export default function ReiteroTabsLayout({
             {loadingReitero ? (
               <div className="flex h-64 flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 gap-2 shadow-sm">
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-slate-400 font-light text-xs">Cargando mapa de georreferenciación...</p>
+                <p className={`font-light text-xs ${reintentandoReitero ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                  {reintentandoReitero ? textoReintento : 'Cargando mapa de georreferenciación...'}
+                </p>
               </div>
             ) : (
               <MapaOrdenes ordenesRaw={reiteroData?.reiteros_raw || []} />
@@ -141,7 +180,9 @@ export default function ReiteroTabsLayout({
             {loadingReitero ? (
               <div className="flex h-64 flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 gap-2 shadow-sm">
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-slate-400 font-light text-xs">Analizando orígenes de diagnóstico...</p>
+                <p className={`font-light text-xs ${reintentandoReitero ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                  {reintentandoReitero ? textoReintento : 'Analizando orígenes de diagnóstico...'}
+                </p>
               </div>
             ) : (
               <OrigenReitero reiterosRaw={reiteroData?.reiteros_raw || []} />
@@ -155,7 +196,9 @@ export default function ReiteroTabsLayout({
             {loadingReitero ? (
               <div className="flex h-64 flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 gap-2 shadow-sm">
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-slate-400 font-light text-xs">Calculando distribución de rangos por días...</p>
+                <p className={`font-light text-xs ${reintentandoReitero ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                  {reintentandoReitero ? textoReintento : 'Calculando distribución de rangos por días...'}
+                </p>
               </div>
             ) : reiteroData ? (
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">

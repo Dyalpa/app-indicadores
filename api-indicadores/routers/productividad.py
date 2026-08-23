@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from utils.helpers import MESES_ESPANOL, festivos_set, mapa_iniciales
 
@@ -27,7 +28,10 @@ MATRIZ_ITEMS = {
 
 def calcular_items_adicionales(grupo_materiales):
     """
-    Analiza el set de materiales de una orden (Agrupada por appt_number) 
+    ⚠️ CONSERVADA COMO REFERENCIA / FALLBACK. Ya no se usa en el flujo
+    principal (ver calcular_excedentes_materiales_vectorizado más abajo),
+    que hace exactamente el mismo cálculo pero de forma vectorizada.
+    Analiza el set de materiales de una orden (Agrupada por appt_number)
     y retorna la sumatoria exacta de dinero y baremos adicionales.
     """
     extra_dinero = 0.0
@@ -35,40 +39,33 @@ def calcular_items_adicionales(grupo_materiales):
     
     subtipo = str(grupo_materiales.get("SUBTIPO_DE_ORDEN", "")).upper()
     
-    # Extraer listas limpias desde las filas asociadas al appt_number
     desc_equipos = [str(x).upper() for x in grupo_materiales.get("LISTA_DESC_EQUIPO", [])]
     transacciones = [str(x).lower() for x in grupo_materiales.get("LISTA_TRANSACCIONES", [])]
     cantidades = grupo_materiales.get("LISTA_CANTIDADES", [])
     familias = [str(x).upper() for x in grupo_materiales.get("LISTA_FAMILIAS", [])]
 
-    # 🔍 1. Comprobar si la orden lleva CABLE UTP en cualquier categoría
     usa_utp = any("UTP" in desc for desc in desc_equipos)
 
-    # --- REGLA A: ALTABA con Cable UTP ---
     if subtipo == "ALTABA" and usa_utp:
         extra_dinero += MATRIZ_ITEMS["291481"]["pago"]
         extra_baremos += MATRIZ_ITEMS["291481"]["baremos"]
         return pd.Series([extra_dinero, extra_baremos], index=["Extra_Dinero", "Extra_Baremos"])
 
-    # --- REGLA B: ALTAIQT, SUBTIPOS CON 'IQT'/'TV' O TRASLADOS ---
     es_candidato_decos = "IQT" in subtipo or "TV" in subtipo or "TRASLADO" in subtipo
 
     if es_candidato_decos:
         total_decos = 0
         
         for desc, trans, cant, familia in zip(desc_equipos, transacciones, cantidades, familias):
-            # Criterios para identificar un decodificador o baseport
             is_deco = "DECO" in desc or "BASEPORT" in desc or familia == "TV"
             
             if is_deco:
-                # 'install' para altas, o 'customer' para traslados
                 if trans == "install" or ("TRASLADO" in subtipo and trans == "customer"):
                     try:
                         total_decos += int(float(cant))
                     except (ValueError, TypeError):
                         total_decos += 1
 
-        # Liquidar excedentes a partir del segundo decodificador
         if total_decos > 1:
             decos_adicionales = total_decos - 1
             
@@ -80,6 +77,82 @@ def calcular_items_adicionales(grupo_materiales):
                 extra_baremos += decos_adicionales * MATRIZ_ITEMS["291451"]["baremos"]
 
     return pd.Series([extra_dinero, extra_baremos], index=["Extra_Dinero", "Extra_Baremos"])
+
+
+def calcular_excedentes_materiales_vectorizado(df_mat_clean, col_desc, col_trans, col_cant, col_fam, col_sub):
+    """
+    🚀 OPTIMIZACIÓN CLAVE: hace exactamente lo mismo que calcular_items_adicionales
+    + el .apply(axis=1) que lo llamaba, pero de forma 100% vectorizada con pandas/numpy
+    en vez de una función Python ejecutada fila por fila. Con datasets grandes de
+    materiales, un .apply(axis=1) puede tardar decenas de segundos; esta versión
+    hace el mismo trabajo en operaciones de columna completa, típicamente en
+    milisegundos o unos pocos segundos incluso con miles de filas.
+
+    Devuelve un DataFrame con: appt_number, Extra_Dinero, Extra_Baremos
+    """
+    df = df_mat_clean.copy()
+
+    desc_upper = df[col_desc].astype(str).str.upper()
+    fam_upper = df[col_fam].astype(str).str.upper()
+    trans_lower = df[col_trans].astype(str).str.lower()
+    cantidad_num = pd.to_numeric(df[col_cant], errors="coerce").fillna(1)
+
+    df["_es_utp"] = desc_upper.str.contains("UTP", na=False)
+    df["_es_deco"] = (
+        desc_upper.str.contains("DECO", na=False)
+        | desc_upper.str.contains("BASEPORT", na=False)
+        | (fam_upper == "TV")
+    )
+
+    # Subtipo por grupo (equivalente al .agg(SUBTIPO_DE_ORDEN=(col_sub, "first")) original)
+    subtipo_grp = df.groupby("appt_number")[col_sub].first().astype(str).str.strip()
+    subtipo_grp_upper = subtipo_grp.str.upper()
+
+    # ¿El grupo usa cable UTP en cualquier fila?
+    usa_utp_grp = df.groupby("appt_number")["_es_utp"].any()
+
+    # Para saber si una transacción 'customer' cuenta (solo si el SUBTIPO del
+    # grupo contiene 'TRASLADO'), reincorporamos el subtipo de grupo a cada fila
+    df = df.merge(subtipo_grp_upper.rename("_subtipo_grp_upper"), on="appt_number", how="left")
+
+    cond_traslado = df["_subtipo_grp_upper"].str.contains("TRASLADO", na=False)
+    cond_transaccion_valida = (trans_lower == "install") | (cond_traslado & (trans_lower == "customer"))
+
+    df["_decos_validos"] = np.where(df["_es_deco"] & cond_transaccion_valida, cantidad_num, 0)
+    total_decos_grp = df.groupby("appt_number")["_decos_validos"].sum()
+
+    # Ensamblar tabla por appt_number (equivalente a "ordenes_agrupadas" original)
+    ordenes = pd.DataFrame({
+        "appt_number": subtipo_grp.index,
+        "SUBTIPO_DE_ORDEN": subtipo_grp.values,
+    })
+    ordenes["usa_utp"] = ordenes["appt_number"].map(usa_utp_grp).fillna(False)
+    ordenes["total_decos"] = ordenes["appt_number"].map(total_decos_grp).fillna(0)
+
+    subtipo_upper = ordenes["SUBTIPO_DE_ORDEN"].str.upper()
+    es_candidato_decos = (
+        subtipo_upper.str.contains("IQT", na=False)
+        | subtipo_upper.str.contains("TV", na=False)
+        | subtipo_upper.str.contains("TRASLADO", na=False)
+    )
+    es_altaba_utp = (subtipo_upper == "ALTABA") & ordenes["usa_utp"]
+
+    # Regla B: excedentes de decodificadores (solo cuenta a partir del 2do)
+    decos_adicionales = (ordenes["total_decos"] - 1).clip(lower=0)
+    decos_adicionales = np.where(es_candidato_decos & (ordenes["total_decos"] > 1), decos_adicionales, 0)
+
+    precio_utp, baremo_utp = MATRIZ_ITEMS["291481"]["pago"], MATRIZ_ITEMS["291481"]["baremos"]
+    precio_std, baremo_std = MATRIZ_ITEMS["291451"]["pago"], MATRIZ_ITEMS["291451"]["baremos"]
+
+    extra_dinero_decos = np.where(ordenes["usa_utp"], decos_adicionales * precio_utp, decos_adicionales * precio_std)
+    extra_baremos_decos = np.where(ordenes["usa_utp"], decos_adicionales * baremo_utp, decos_adicionales * baremo_std)
+
+    # Regla A (ALTABA + UTP) tiene prioridad y anula el cálculo de decos, igual
+    # que el "return" temprano en la función original
+    ordenes["Extra_Dinero"] = np.where(es_altaba_utp, precio_utp, extra_dinero_decos)
+    ordenes["Extra_Baremos"] = np.where(es_altaba_utp, baremo_utp, extra_baremos_decos)
+
+    return ordenes[["appt_number", "Extra_Dinero", "Extra_Baremos"]]
 
 
 def obtener_datos_optimizados():
@@ -145,12 +218,10 @@ def obtener_precios_optimizados():
 
 
 def obtener_materiales_optimizados():
-    print(f"🔍 [Debug Materiales] Buscando archivo Excel en: {MATERIALES_FILE}")
-    
     if not os.path.exists(MATERIALES_FILE):
-        print(f"⚠️ [Debug Materiales] ALERTA: No se encontró el archivo '{MATERIALES_FILE}'.")
         if os.path.exists(MATERIALES_PARQUET):
             return pd.read_parquet(MATERIALES_PARQUET)
+        print(f"⚠️ [Debug Materiales] ALERTA: No se encontró el archivo '{MATERIALES_FILE}'.")
         return None
 
     reconstruir = False
@@ -158,12 +229,12 @@ def obtener_materiales_optimizados():
         reconstruir = True
 
     if reconstruir:
+        print(f"🔍 [Debug Materiales] Buscando archivo Excel en: {MATERIALES_FILE}")
         print("🔄 [Materiales] Actualizando caché Parquet...")
         try:
             df_mat = pd.read_excel(MATERIALES_FILE, dtype={"NUMERO_DE_ORDEN_DE_TOA": str, "Pet_atis": str})
             df_mat.columns = [c.strip() for c in df_mat.columns]
             
-            # Dejamos guardado el parquet con el mapeo estructurado a appt_number
             if "NUMERO_DE_ORDEN_DE_TOA" in df_mat.columns:
                 df_mat = df_mat.rename(columns={"NUMERO_DE_ORDEN_DE_TOA": "appt_number"})
                 df_mat["appt_number"] = df_mat["appt_number"].astype(str).str.strip()
@@ -183,8 +254,20 @@ def obtener_materiales_optimizados():
     return pd.read_parquet(MATERIALES_PARQUET)
 
 
-@router.get("/informe")
-def informe():
+# 🚀 OPTIMIZACIÓN CLAVE: caché en memoria de la respuesta COMPLETA de /informe.
+# Se invalida automáticamente solo cuando cambia alguno de los 3 archivos fuente
+# (Excel o su Parquet). Esto hace que peticiones repetidas -reintentos del
+# frontend, refrescos de página, cambio de pestaña- respondan casi al instante
+# en vez de recalcular todo el pipeline (merge + agrupaciones) cada vez.
+_cache_informe = {"clave": None, "payload": None}
+
+
+def _clave_cache_informe():
+    archivos = [EXCEL_FILE, PARQUET_FILE, PRECIOS_FILE, PRECIOS_PARQUET, MATERIALES_FILE, MATERIALES_PARQUET]
+    return tuple(os.path.getmtime(a) if os.path.exists(a) else None for a in archivos)
+
+
+def _construir_informe():
     df = obtener_datos_optimizados()
     df = df.where(pd.notnull(df), None)
     
@@ -207,17 +290,15 @@ def informe():
     df["Valor_promedio_en_baremos"] = df["Valor_promedio_en_baremos"].fillna(0)
     
     # 2. PROCESAR REGLAS DE NEGOCIO DE MATERIALES (CRUCE POR APPT_NUMBER) 📦
+    #    🚀 Ahora vectorizado — ver calcular_excedentes_materiales_vectorizado
     df["Costo_Materiales_Total"] = 0.0
     df["Baremos_Materiales_Total"] = 0.0
     
     if df_materiales is not None and not df_materiales.empty:
         df_mat_clean = df_materiales.copy()
-        
-        # Limpieza de nombres de columna
         df_mat_clean.columns = [c.strip() for c in df_mat_clean.columns]
         cols_en_mayuscula = {c.upper(): c for c in df_mat_clean.columns}
         
-        # Asegurar mapeo de NUMERO_DE_ORDEN_DE_TOA a appt_number en caso de lectura directa desde Parquet anterior
         col_toa_real = cols_en_mayuscula.get("NUMERO_DE_ORDEN_DE_TOA") or cols_en_mayuscula.get("NUMERO_DE_ORDEN")
         if col_toa_real:
             df_mat_clean = df_mat_clean.rename(columns={col_toa_real: "appt_number"})
@@ -227,30 +308,18 @@ def informe():
         else:
             df_mat_clean["appt_number"] = df_mat_clean.iloc[:, 0].astype(str).str.strip()
 
-        # Mapear dinámicamente columnas de datos requeridas por tu algoritmo
         col_desc = cols_en_mayuscula.get("DESC_TIPO_EQUIPO") or cols_en_mayuscula.get("DESC_TIPO_DE_EQUIPO") or cols_en_mayuscula.get("DESC_MATERIAL") or "DESC_TIPO_EQUIPO"
         col_trans = cols_en_mayuscula.get("TRANSACCION") or cols_en_mayuscula.get("TIPO_TRANSACCION") or "TRANSACCION"
         col_cant = cols_en_mayuscula.get("CANTIDAD") or cols_en_mayuscula.get("CANT_MATERIAL") or "CANTIDAD"
         col_fam = cols_en_mayuscula.get("FAMILIA") or "FAMILIA"
         col_sub = cols_en_mayuscula.get("SUBTIPO_DE_ORDEN") or "Subtipo_de_orden"
 
-        print("⚙️ [Reglas Negocio] Agrupando materiales por 'appt_number'...")
-        
-        # Agrupamos las líneas de materiales bajo su identificador común de cita TOA
-        ordenes_agrupadas = df_mat_clean.groupby("appt_number").agg(
-            SUBTIPO_DE_ORDEN=(col_sub, "first"),
-            LISTA_DESC_EQUIPO=(col_desc, list),
-            LISTA_TRANSACCIONES=(col_trans, list),
-            LISTA_CANTIDADES=(col_cant, list),
-            LISTA_FAMILIAS=(col_fam, list)
-        ).reset_index()
-        
-        # Aplicación con expansión explícita de columnas para prevenir desalineaciones (evita el ValueError/KeyError)
-        excedentes_df = ordenes_agrupadas.apply(calcular_items_adicionales, axis=1, result_type="expand")
-        ordenes_agrupadas[["Extra_Dinero", "Extra_Baremos"]] = excedentes_df
-        
-        # Cruzar resultados liquidados con el DataFrame maestro usando 'appt_number'
-        df_excedentes = ordenes_agrupadas[["appt_number", "Extra_Dinero", "Extra_Baremos"]]
+        print("⚙️ [Reglas Negocio] Agrupando materiales por 'appt_number' (vectorizado)...")
+
+        df_excedentes = calcular_excedentes_materiales_vectorizado(
+            df_mat_clean, col_desc, col_trans, col_cant, col_fam, col_sub
+        )
+
         df = pd.merge(df, df_excedentes, on="appt_number", how="left")
         
         df["Costo_Materiales_Total"] = df["Extra_Dinero"].fillna(0)
@@ -286,7 +355,6 @@ def informe():
         Total_Baremos=("Valor_promedio_en_baremos", "sum")
     ).reset_index()
     
-    # Total_Dinero combina mano de obra base + excedentes calculados por materiales para tu UI en React
     agrupado_por_dia["Total_Dinero"] = agrupado_por_dia["Total_Mano_Obra"] + agrupado_por_dia["Total_Materiales"]
 
     df_dias = df[["Mes", "Dia_Del_Mes", "Inicial_Es", "Es_No_Laboral"]].drop_duplicates().sort_values("Dia_Del_Mes")
@@ -320,3 +388,18 @@ def informe():
         "kpis_globales": kpis_globales,
         "lineas_productividad_base": agrupado_por_dia.to_dict(orient="records")
     }
+
+
+@router.get("/informe")
+def informe():
+    clave_actual = _clave_cache_informe()
+
+    if _cache_informe["clave"] == clave_actual and _cache_informe["payload"] is not None:
+        # ⚡ Cache-hit: ninguno de los 3 archivos fuente cambió desde la última
+        # vez -> devolvemos la respuesta ya calculada, sin tocar pandas.
+        return _cache_informe["payload"]
+
+    payload = _construir_informe()
+    _cache_informe["clave"] = clave_actual
+    _cache_informe["payload"] = payload
+    return payload

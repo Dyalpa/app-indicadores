@@ -1,7 +1,8 @@
 import os
 import datetime
 from typing import Optional
-from fastapi import APIRouter
+from functools import lru_cache
+from fastapi import APIRouter, HTTPException
 import pandas as pd
 import numpy as np
 
@@ -18,7 +19,15 @@ COLUMNAS_REQUERIDAS_REITERO = [
     "TOA_APERTURA_AVERIA_PADRE", "TOA_CIERRE_AVERIA_PADRE", "DIAS_REITERO", "AVERIA", "REITERO", "COORDENADAS"
 ]
 
-# 🇨🇴 ESTRUCTURA DE FESTIVOS (Convertido a Set para búsquedas O(1) ultrarrápidas)
+# 🚀 Columnas que el frontend realmente consume desde reiteros_raw.
+COLUMNAS_RESPUESTA_RAW = [
+    "ACCESS_ID", "REITERO", "AVERIA", "TOA_CIERRE_AVERIA",
+    "TOA_CIERRE_AVERIA_PADRE", "OBSERVACIONES_DIAGNOSTICO", "lat", "lng",
+    "DIAS_REITERO", "NUMERO_INCIDENTE", "CIUDAD", "TOA_CAJA",
+    "Origen_Averia", "TOA_PROVIDER_SOURCE_PADRE", "DEPARTAMENTO"
+]
+
+# 🇨🇴 ESTRUCTURA DE FESTIVOS
 FESTIVOS_TUPLAS = {
     (2026, 1, 1), (2026, 1, 12), (2026, 3, 23), (2026, 4, 2), (2026, 4, 3),
     (2026, 5, 1), (2026, 5, 25), (2026, 6, 8), (2026, 6, 15), (2026, 6, 29),
@@ -75,8 +84,31 @@ def asignar_rango_dias_series(series_dias):
     return rangos.astype(str).replace({"nan": "Sin Rango", "NaN": "Sin Rango"})
 
 
-# 🚀 CACHÉ EN MEMORIA CON PARQUET: Evita leer Excel repetitivas veces
-def obtener_reitero_optimizados(nombre_mes: Optional[str] = None):
+@lru_cache(maxsize=1)
+def obtener_calendario_estatico():
+    calendario_por_mes = {}
+    for mes_nombre, mes_num in meses_mapeo.items():
+        try:
+            start_date = f"2026-{str(mes_num).zfill(2)}-01"
+            rango_fechas = pd.date_range(start=start_date, periods=pd.Period(start_date).days_in_month)
+
+            dias_lista = [
+                {
+                    "Dia_Del_Mes": int(fecha.day),
+                    "Inicial_Es": mapa_iniciales.get(fecha.dayofweek, "D"),
+                    "Es_Festivo": bool((fecha.dayofweek == 6) or ((2026, mes_num, fecha.day) in FESTIVOS_TUPLAS))
+                }
+                for fecha in rango_fechas
+            ]
+            calendario_por_mes[mes_nombre] = dias_lista
+        except Exception:
+            calendario_por_mes[mes_nombre] = []
+
+    return calendario_por_mes
+
+
+# 🚀 LÓGICA INTERNA DE CARGA
+def _cargar_o_procesar_parquet(nombre_mes: Optional[str] = None):
     if nombre_mes:
         excel_path = f"data_sources/Reitero_{nombre_mes.capitalize()}.xlsx"
         parquet_path = f"data_sources/reitero_{nombre_mes.lower()}.parquet"
@@ -84,12 +116,19 @@ def obtener_reitero_optimizados(nombre_mes: Optional[str] = None):
         excel_path = "data_sources/Reitero_Junio.xlsx"
         parquet_path = "data_sources/reitero_junio.parquet"
 
-    if not os.path.exists(parquet_path):
-        if not os.path.exists(excel_path):
-            excel_path = "data_sources/Reitero_Junio.xlsx"
-            parquet_path = "data_sources/reitero_junio.parquet"
-            if not os.path.exists(excel_path):
-                raise FileNotFoundError(f"No se encontró ningún archivo de respaldo en data_sources/")
+    # 🚨 CORRECCIÓN DE BUG: antes, si el mes pedido no tenía ni parquet ni Excel,
+    # el código caía SILENCIOSAMENTE al archivo de Junio, devolviendo datos de
+    # un mes distinto al solicitado sin avisar a nadie (ni error, ni log claro).
+    # Esto podía hacer que la UI mostrara información de otro mes disfrazada
+    # de la que el usuario acababa de pedir. Ahora se lanza un error explícito.
+    if not os.path.exists(parquet_path) and not os.path.exists(excel_path):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No existe información para el mes '{nombre_mes}'. "
+                f"Se esperaba el archivo '{excel_path}' en data_sources/ y no fue encontrado."
+            )
+        )
 
     reconstruir = not os.path.exists(parquet_path) or os.path.getmtime(excel_path) > os.path.getmtime(parquet_path)
 
@@ -117,7 +156,6 @@ def obtener_reitero_optimizados(nombre_mes: Optional[str] = None):
             if col in df.columns:
                 df[col] = df[col].fillna("SIN ESPECIFICAR").astype(str).str.strip().str.upper()
                 
-        # 🚀 Pre-calculamos columnas estáticas pesadas para acelerar los filtros
         df["FECHA_CREACION_DATETIME"] = pd.to_datetime(df["FECHA_CREACION"], errors="coerce")
         df["Dia_Ingreso"] = df["FECHA_CREACION_DATETIME"].dt.day
         df["Mes_Ingreso"] = df["FECHA_CREACION_DATETIME"].dt.month
@@ -130,6 +168,133 @@ def obtener_reitero_optimizados(nombre_mes: Optional[str] = None):
         return df
 
     return pd.read_parquet(parquet_path)
+
+
+# 🚀 CACHÉ EN MEMORIA
+@lru_cache(maxsize=12)
+def obtener_reitero_optimizados(nombre_mes: Optional[str] = None):
+    return _cargar_o_procesar_parquet(nombre_mes)
+
+
+def _calcular_causales_ultimas_vectorizado(df_filtrado, df_reiteros_only):
+    """
+    🚀 Reemplaza el loop `for nombre_causal, group in df_filtrado.groupby(...)`
+    que hacía un groupby+agg ANIDADO por cada causal (lento y O(n_causales)
+    llamadas a pandas). Ahora se hacen 2 groupbys GLOBALES (uno para los
+    totales por causal, otro para el desglose de CAIs) y solo se itera sobre
+    el resultado ya agregado, que es mucho más pequeño.
+    """
+    agg_causales = df_filtrado.groupby("TOA_CIERRE_AVERIA", as_index=False).agg(
+        Averias=("AVERIA", "sum"),
+        Reiteros=("REITERO", "sum")
+    )
+    agg_causales["Tasa_Reitero"] = np.where(
+        agg_causales["Averias"] > 0,
+        (agg_causales["Reiteros"] / agg_causales["Averias"] * 100).round(2),
+        0.0
+    )
+
+    cais_por_causal = {}
+    if not df_reiteros_only.empty:
+        cais_global = df_reiteros_only.groupby(
+            ["TOA_CIERRE_AVERIA", "ACCESS_ID", "OBSERVACIONES_DIAGNOSTICO"], as_index=False
+        ).agg(Reiteros=("REITERO", "sum"))
+
+        totales_por_causal = cais_global.groupby("TOA_CIERRE_AVERIA")["Reiteros"].transform("sum")
+        cais_global["Porcentaje"] = np.where(
+            totales_por_causal > 0,
+            (cais_global["Reiteros"] / totales_por_causal * 100).round(2),
+            0.0
+        )
+        cais_global = cais_global.rename(columns={"ACCESS_ID": "CODIGO_CAI", "OBSERVACIONES_DIAGNOSTICO": "DESCRIPCION_CAI"})
+
+        for causal, sub in cais_global.groupby("TOA_CIERRE_AVERIA"):
+            cais_por_causal[causal] = sub[["CODIGO_CAI", "DESCRIPCION_CAI", "Reiteros", "Porcentaje"]].to_dict(orient="records")
+
+    causales_ultimas = []
+    for _, row in agg_causales.iterrows():
+        causales_ultimas.append({
+            "TOA_CIERRE_AVERIA": row["TOA_CIERRE_AVERIA"],
+            "Averias": int(row["Averias"]),
+            "Reiteros": int(row["Reiteros"]),
+            "Tasa_Reitero": float(row["Tasa_Reitero"]),
+            "cais": cais_por_causal.get(row["TOA_CIERRE_AVERIA"], [])
+        })
+
+    return sorted(causales_ultimas, key=lambda x: x["Averias"], reverse=True)
+
+
+def _calcular_causales_padres_vectorizado(df_reiteros_only):
+    """🚀 Misma optimización que causales_ultimas, aplicada a las causales padre."""
+    if df_reiteros_only.empty:
+        return []
+
+    total_reiteros_padre_global = df_reiteros_only["REITERO"].sum()
+
+    agg_padres = df_reiteros_only.groupby("TOA_CIERRE_AVERIA_PADRE", as_index=False).agg(
+        Reiteros_Causados=("REITERO", "sum")
+    )
+    agg_padres["Distribucion_Porcentaje"] = np.where(
+        total_reiteros_padre_global > 0,
+        (agg_padres["Reiteros_Causados"] / total_reiteros_padre_global * 100).round(2),
+        0.0
+    )
+
+    cais_padres_global = df_reiteros_only.groupby(
+        ["TOA_CIERRE_AVERIA_PADRE", "ACCESS_ID_PADRE", "OBSERVACIONES_DIAGNOSTICO"], as_index=False
+    ).agg(Reiteros=("REITERO", "sum"))
+
+    totales_por_padre = cais_padres_global.groupby("TOA_CIERRE_AVERIA_PADRE")["Reiteros"].transform("sum")
+    cais_padres_global["Porcentaje"] = np.where(
+        totales_por_padre > 0,
+        (cais_padres_global["Reiteros"] / totales_por_padre * 100).round(2),
+        0.0
+    )
+    cais_padres_global = cais_padres_global.rename(columns={"ACCESS_ID_PADRE": "CODIGO_CAI", "OBSERVACIONES_DIAGNOSTICO": "DESCRIPCION_CAI"})
+
+    cais_por_padre = {}
+    for padre, sub in cais_padres_global.groupby("TOA_CIERRE_AVERIA_PADRE"):
+        cais_por_padre[padre] = sub[["CODIGO_CAI", "DESCRIPCION_CAI", "Reiteros", "Porcentaje"]].to_dict(orient="records")
+
+    causales_padres = []
+    for _, row in agg_padres.iterrows():
+        causales_padres.append({
+            "TOA_CIERRE_AVERIA_PADRE": row["TOA_CIERRE_AVERIA_PADRE"],
+            "Reiteros_Causados": int(row["Reiteros_Causados"]),
+            "Distribucion_Porcentaje": float(row["Distribucion_Porcentaje"]),
+            "cais": cais_por_padre.get(row["TOA_CIERRE_AVERIA_PADRE"], [])
+        })
+
+    return sorted(causales_padres, key=lambda x: x["Reiteros_Causados"], reverse=True)
+
+
+def _calcular_seg_rangos_vectorizado(df_reiteros_only):
+    """🚀 Misma optimización aplicada a la distribución por rango de días."""
+    if df_reiteros_only.empty:
+        return []
+
+    conteo_por_rango = df_reiteros_only.groupby("Rango_Dias_Reitero").size()
+
+    casos_global = df_reiteros_only.groupby(
+        ["Rango_Dias_Reitero", "ACCESS_ID", "ACCESS_ID_PADRE", "TOA_CIERRE_AVERIA", "TOA_CIERRE_AVERIA_PADRE"],
+        as_index=False
+    ).size().rename(columns={"size": "Reiteros"})
+
+    casos_global["ACCESS_ID"] = np.where(
+        casos_global["ACCESS_ID"] != "SIN_ID",
+        casos_global["ACCESS_ID"],
+        casos_global["ACCESS_ID_PADRE"]
+    )
+
+    seg_rangos = []
+    for rango, sub in casos_global.groupby("Rango_Dias_Reitero"):
+        seg_rangos.append({
+            "Rango_Dias_Reitero": rango,
+            "Cantidad_Casos": int(conteo_por_rango.get(rango, 0)),
+            "Casos": sub.drop(columns=["Rango_Dias_Reitero"]).to_dict(orient="records")
+        })
+
+    return seg_rangos
 
 
 @router.get("/reitero")
@@ -145,14 +310,12 @@ def informe_reitero(
 ):
     df_base = obtener_reitero_optimizados(mes)
 
-    # 🚀 Extracción de listas únicas directamente de columnas pre-procesadas (Mucho más rápido)
     departamentos_lista = sorted(df_base["DEPARTAMENTO"].dropna().unique().tolist())
     ciudades_lista = sorted(df_base["CIUDAD"].dropna().unique().tolist())
     origene_lista = sorted(df_base["Origen_Averia"].dropna().unique().tolist())
     ctos_lista = sorted(df_base["TOA_CAJA"].dropna().unique().tolist())
     tecnicos_lista = sorted(df_base["TOA_PROVIDER_SOURCE"].dropna().unique().tolist())
 
-    # Detección dinámica de meses disponibles en disco
     meses_disponibles_lista = []
     if os.path.exists("data_sources"):
         for archivo in os.listdir("data_sources/"):
@@ -164,27 +327,10 @@ def informe_reitero(
     orden_meses = list(meses_mapeo.keys())
     meses_disponibles_lista = sorted(meses_disponibles_lista, key=lambda x: orden_meses.index(x) if x in orden_meses else 99)
 
-    # --- 📅 CALENDARIO OPTIMIZADO ---
-    calendario_por_mes = {}
-    for mes_nombre, mes_num in meses_mapeo.items():
-        try:
-            start_date = f"2026-{str(mes_num).zfill(2)}-01"
-            rango_fechas = pd.date_range(start=start_date, periods=pd.Period(start_date).days_in_month)
-            
-            dias_lista = [
-                {
-                    "Dia_Del_Mes": int(fecha.day),
-                    "Inicial_Es": mapa_iniciales.get(fecha.dayofweek, "D"),
-                    "Es_Festivo": bool((fecha.dayofweek == 6) or ((2026, mes_num, fecha.day) in FESTIVOS_TUPLAS))
-                }
-                for fecha in rango_fechas
-            ]
-            calendario_por_mes[mes_nombre] = dias_lista
-        except Exception:
-            calendario_por_mes[mes_nombre] = []
+    calendario_por_mes = obtener_calendario_estatico()
 
-    # --- 🌊 FILTROS VECTORIZADOS (Más eficientes) ---
-    df_filtrado = df_base
+    # --- 🌊 FILTROS VECTORIZADOS ---
+    df_filtrado = df_base.copy()
     if mes and mes in meses_mapeo:
         df_filtrado = df_filtrado[df_filtrado["Mes_Ingreso"] == meses_mapeo[mes]]
     if dia_inicio is not None:
@@ -203,6 +349,30 @@ def informe_reitero(
     if cto:
         df_filtrado = df_filtrado[df_filtrado["TOA_CAJA"] == cto.strip().upper()]
 
+    # --- 🧪 TRATAMIENTO Y SUSTITUCIÓN DE CAUSALES NULAS SEGÚN EL ESTADO ---
+    columnas_causales_hijas = ["TOA_APERTURA_AVERIA", "TOA_CIERRE_AVERIA"]
+    columnas_causales_padres = ["TOA_APERTURA_AVERIA_PADRE", "TOA_CIERRE_AVERIA_PADRE"]
+
+    for col in columnas_causales_hijas:
+        if col in df_filtrado.columns:
+            df_filtrado[col] = df_filtrado[col].replace(["nan", "NAN", "null", "NULL", "None", ""], None)
+            mask_nulo = df_filtrado[col].isna()
+            if mask_nulo.any():
+                estado_lower = df_filtrado["TOA_ESTADO_FINAL"].fillna("").str.strip().str.lower()
+                df_filtrado.loc[mask_nulo & estado_lower.isin(["asignado", "agendada", "suspendida"]), col] = "AVERIA ABIERTA"
+                df_filtrado.loc[mask_nulo & (estado_lower == "cancelada"), col] = "CANCELADA"
+                df_filtrado.loc[mask_nulo & (estado_lower == "no realizada"), col] = "NO REALIZADA"
+
+    for col in columnas_causales_padres:
+        if col in df_filtrado.columns:
+            df_filtrado[col] = df_filtrado[col].replace(["nan", "NAN", "null", "NULL", "None", ""], None)
+            mask_nulo = df_filtrado[col].isna()
+            if mask_nulo.any():
+                estado_padre_lower = df_filtrado["ESTADO_FINAL_PADRE"].fillna("").str.strip().str.lower()
+                df_filtrado.loc[mask_nulo & estado_padre_lower.isin(["asignado", "agendada", "suspendida"]), col] = "AVERIA ABIERTA"
+                df_filtrado.loc[mask_nulo & (estado_padre_lower == "cancelada"), col] = "CANCELADA"
+                df_filtrado.loc[mask_nulo & (estado_padre_lower == "no realizada"), col] = "NO REALIZADA"
+
     # --- 📊 MÉTRICAS GENERALES ---
     total_averias = int(df_filtrado["AVERIA"].sum())
     total_reiteros = int(df_filtrado["REITERO"].sum())
@@ -212,28 +382,10 @@ def informe_reitero(
     if not seg_vision.empty:
         seg_vision["Tasa_Reitero"] = (seg_vision["Reiteros"] / seg_vision["Averias"] * 100).round(2)
 
-    # --- 🎯 PROCESAMIENTO DE DISTRIBUCIÓN POR RANGOS DE DÍAS ---
     df_reiteros_only = df_filtrado[df_filtrado["REITERO"] == 1]
 
-    seg_rangos = []
-    if not df_reiteros_only.empty:
-        for rango, grupo in df_reiteros_only.groupby("Rango_Dias_Reitero"):
-            agrupado_casos = grupo.groupby(
-                ["ACCESS_ID", "ACCESS_ID_PADRE", "TOA_CIERRE_AVERIA", "TOA_CIERRE_AVERIA_PADRE"],
-                as_index=False
-            ).size().rename(columns={"size": "Reiteros"})
-            
-            agrupado_casos["ACCESS_ID"] = np.where(
-                agrupado_casos["ACCESS_ID"] != "SIN_ID", 
-                agrupado_casos["ACCESS_ID"], 
-                agrupado_casos["ACCESS_ID_PADRE"]
-            )
-            
-            seg_rangos.append({
-                "Rango_Dias_Reitero": rango,
-                "Cantidad_Casos": len(grupo),
-                "Casos": agrupado_casos.to_dict(orient="records")
-            })
+    # --- 🎯 DISTRIBUCIÓN POR RANGOS DE DÍAS (vectorizado) ---
+    seg_rangos = _calcular_seg_rangos_vectorizado(df_reiteros_only)
 
     # --- RANKING TÉCNICOS ---
     tecnicos_atendidas = df_filtrado.groupby(["TOA_PROVIDER_SOURCE", "DEPARTAMENTO"], as_index=False).agg(Averias_Atendidas=("AVERIA", "sum")).rename(columns={"TOA_PROVIDER_SOURCE": "Tecnico"})
@@ -253,50 +405,9 @@ def informe_reitero(
         Reiteros_Ingresados=("REITERO", "sum")
     ).sort_values(["Mes_Ingreso", "Dia_Ingreso"])
 
-    # --- 🧪 PROCESAMIENTO DE CAUSALES Y CAIs ---
-    causales_ultimas = []
-    for nombre_causal, group in df_filtrado.groupby("TOA_CIERRE_AVERIA"):
-        averias = int(group["AVERIA"].sum())
-        reiteros = int(group["REITERO"].sum())
-        tasa = round((reiteros / averias * 100), 2) if averias > 0 else 0.0
-        
-        group_reit = group[group["REITERO"] == 1]
-        cais_list = []
-        if not group_reit.empty:
-            cais_grp = group_reit.groupby(["ACCESS_ID", "OBSERVACIONES_DIAGNOSTICO"], as_index=False).agg(Reiteros=("REITERO", "sum"))
-            total_reit_causal = cais_grp["Reiteros"].sum()
-            cais_grp["Porcentaje"] = (cais_grp["Reiteros"] / total_reit_causal * 100).round(2) if total_reit_causal > 0 else 0.0
-            cais_grp = cais_grp.rename(columns={"ACCESS_ID": "CODIGO_CAI", "OBSERVACIONES_DIAGNOSTICO": "DESCRIPCION_CAI"})
-            cais_list = cais_grp.to_dict(orient="records")
-
-        causales_ultimas.append({
-            "TOA_CIERRE_AVERIA": nombre_causal,
-            "Averias": averias,
-            "Reiteros": reiteros,
-            "Tasa_Reitero": tasa,
-            "cais": cais_list
-        })
-    causales_ultimas = sorted(causales_ultimas, key=lambda x: x["Averias"], reverse=True)
-
-    causales_padres = []
-    total_reiteros_padre_global = df_reiteros_only["REITERO"].sum()
-    if not df_reiteros_only.empty:
-        for nombre_padre, group in df_reiteros_only.groupby("TOA_CIERRE_AVERIA_PADRE"):
-            reiteros_causados = int(group["REITERO"].sum())
-            distribucion = round((reiteros_causados / total_reiteros_padre_global * 100), 2) if total_reiteros_padre_global > 0 else 0.0
-            
-            cais_grp = group.groupby(["ACCESS_ID_PADRE", "OBSERVACIONES_DIAGNOSTICO"], as_index=False).agg(Reiteros=("REITERO", "sum"))
-            cais_grp["Porcentaje"] = (cais_grp["Reiteros"] / reiteros_causados * 100).round(2) if reiteros_causados > 0 else 0.0
-            cais_grp = cais_grp.rename(columns={"ACCESS_ID_PADRE": "CODIGO_CAI", "OBSERVACIONES_DIAGNOSTICO": "DESCRIPCION_CAI"})
-            
-            causales_padres.append({
-                "TOA_CIERRE_AVERIA_PADRE": nombre_padre,
-                "Reiteros_Causados": reiteros_causados,
-                "Distribucion_Porcentaje": distribucion,
-                "cais": cais_grp.to_dict(orient="records")
-            })
-    causales_padres = sorted(causales_padres, key=lambda x: x["Reiteros_Causados"], reverse=True)
-
+    # --- 🧪 CAUSALES Y CAIs (vectorizado) ---
+    causales_ultimas = _calcular_causales_ultimas_vectorizado(df_filtrado, df_reiteros_only)
+    causales_padres = _calcular_causales_padres_vectorizado(df_reiteros_only)
     causales_tasa = sorted([c for c in causales_ultimas if c["Averias"] >= 3], key=lambda x: x["Tasa_Reitero"], reverse=True)
 
     # --- 🧹 SERIALIZACIÓN MASIVA OPTIMIZADA Y BLINDADA ---
@@ -308,11 +419,11 @@ def informe_reitero(
             df_filtrado_limpio[date_col] = pd.to_datetime(df_filtrado_limpio[date_col], errors="coerce")
             df_filtrado_limpio[date_col] = df_filtrado_limpio[date_col].dt.strftime('%Y-%m-%d %H:%M:%S')
 
-    # Reemplazamos NaN, NaT e infinitos por None de forma segura para JSON
     df_filtrado_limpio = df_filtrado_limpio.replace({np.nan: None, pd.NaT: None, np.inf: None, -np.inf: None})
     df_filtrado_limpio = df_filtrado_limpio.where(pd.notnull(df_filtrado_limpio), None)
-    
-    reiteros_raw_list = df_filtrado_limpio.to_dict(orient="records")
+
+    columnas_disponibles_raw = [c for c in COLUMNAS_RESPUESTA_RAW if c in df_filtrado_limpio.columns]
+    reiteros_raw_list = df_filtrado_limpio[columnas_disponibles_raw].to_dict(orient="records")
 
     excel_usado = f"Reitero_{mes.capitalize()}.xlsx" if mes and mes in meses_mapeo else "Reitero_Junio.xlsx"
 

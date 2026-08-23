@@ -17,4 +17,15 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    // 🌐 Permite que Vite acepte requests que lleguen con un Host header de
+    // Cloudflare Tunnel (por defecto Vite los bloquea como protección anti
+    // DNS-rebinding). El wildcard ".trycloudflare.com" cubre cualquier
+    // subdominio, ya que los "quick tunnels" generan una URL nueva cada vez
+    // que se reinicia `cloudflared` — así no hay que editar esto cada vez.
+    allowedHosts: [
+      '.trycloudflare.com',
+      'fs9xp008-5173.use.devtunnels.ms' // se deja por si vuelves a usar devtunnels
+    ],
+  },
 })
