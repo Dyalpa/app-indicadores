@@ -25,6 +25,7 @@ export default function App() {
     reintentandoReitero,
     reiteroError,
     reintentarReitero,
+    apiBaseUrl,
     activeTab, 
     setActiveTab, 
     filtersProductividad,
@@ -172,6 +173,7 @@ export default function App() {
             reintentandoReitero={reintentandoReitero}
             reiteroError={reiteroError}
             reintentarReitero={reintentarReitero}
+            apiBaseUrl={apiBaseUrl}
             filtersReitero={filtersReitero}
             settersReitero={settersReitero}
             actionsReitero={actionsReitero}          

@@ -10,9 +10,6 @@ export function useDashboardState() {
   const [reintentandoReitero, setReintentandoReitero] = useState(false);
   const [reintentandoInforme, setReintentandoInforme] = useState(false);
   const [reiteroError, setReiteroError] = useState(null);
-  // 🔁 Contador manual: al incrementarlo, el efecto de carga de Reitero se
-  // vuelve a ejecutar con LOS MISMOS filtros actuales (no hace falta que el
-  // usuario cambie algo y lo vuelva a cambiar para forzar un nuevo intento).
   const [reiteroRetryTick, setReiteroRetryTick] = useState(0);
 
   const [selectedMesReitero, setSelectedMesReitero] = useState('');
@@ -103,11 +100,9 @@ export function useDashboardState() {
       try {
         const respuesta = await fetchConReintentosConAviso(
           `${apiBaseUrl}/api/reitero?${queryParams.toString()}`,
-          {},
-          4,      // 🔧 subido de 3 a 4 reintentos
-          800,    // 🔧 espera inicial un poco mayor
+          {}, 4, 800,
           () => { if (!controller.signal.aborted) setReintentandoReitero(true); },
-          12000,  // 🔧 timeout por intento subido de 6s a 12s, más margen
+          12000,
           controller.signal
         );
         const resReitero = await respuesta.json();
@@ -130,8 +125,6 @@ export function useDashboardState() {
 
     cargarReitero();
     return () => controller.abort();
-    // 👇 reiteroRetryTick entra como dependencia: al incrementarlo desde el
-    // botón "Reintentar", este efecto se re-ejecuta con los MISMOS filtros.
   }, [activeTab, selectedMesReitero, selectedDeptoReitero, visionCliente, visionTerreno, diaInicioReitero, diaFinReitero, apiBaseUrl, reiteroRetryTick]);
 
   const manejarCambioMesProductividad = (mes) => {
@@ -171,7 +164,6 @@ export function useDashboardState() {
     }
   };
 
-  // 🔁 Función expuesta para el botón "Reintentar" en la UI
   const reintentarReitero = () => setReiteroRetryTick(t => t + 1);
 
   return {
@@ -185,6 +177,10 @@ export function useDashboardState() {
     reintentarReitero,
     activeTab,
     setActiveTab,
+    // 🆕 Se expone para que componentes que hacen su propio fetch (como el
+    // nuevo panel de Reiterativos) usen la misma URL base sin duplicar la
+    // lógica de detección de entorno.
+    apiBaseUrl,
 
     filtersProductividad: {
       selectedMes, selectedDepto, selectedTecnico, selectedTipoOrden, selectedTipoDia, diaInicio, diaFin

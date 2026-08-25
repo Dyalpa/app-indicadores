@@ -2,13 +2,13 @@ import os
 import datetime
 from typing import Optional
 from functools import lru_cache
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 import pandas as pd
 import numpy as np
 
 router = APIRouter()
 
-# 🗺️ COLUMNAS REQUERIDAS (Incluyendo TOA_PROVIDER_SOURCE_PADRE)
+# 🗺️ COLUMNAS REQUERIDAS (Incluyendo TOA_PROVIDER_SOURCE_PADRE y datos del titular)
 COLUMNAS_REQUERIDAS_REITERO = [
     "VISION", "NUMERO_INCIDENTE", "FECHA_CREACION", "ACCESS_ID", 
     "OBSERVACIONES_DIAGNOSTICO", "DEPARTAMENTO", "CIUDAD", "TOA_NUMERO_DE_ORDEN", 
@@ -16,7 +16,9 @@ COLUMNAS_REQUERIDAS_REITERO = [
     "TOA_EXTERNAL_ID", "TOA_PROVIDER_SOURCE", "TOA_PROVIDER_SOURCE_PADRE", "TOA_ESTADO_FINAL", "TOA_ARMARIO", 
     "TOA_CAJA", "EXCLUSION", "NUMERO_INCIDENTE_PADRE", "ACCESS_ID_PADRE", 
     "FECHA_CIERRE_PADRE", "ESTADO_FINAL_PADRE", "TOA_EXTERNAL_ID_PADRE", 
-    "TOA_APERTURA_AVERIA_PADRE", "TOA_CIERRE_AVERIA_PADRE", "DIAS_REITERO", "AVERIA", "REITERO", "COORDENADAS"
+    "TOA_APERTURA_AVERIA_PADRE", "TOA_CIERRE_AVERIA_PADRE", "DIAS_REITERO", "AVERIA", "REITERO", "COORDENADAS",
+    # 🆕 Datos del titular del servicio, para la sub-pestaña "Reiterativos"
+    "NOMBRE_CLIENTE", "TELEFONO_CONTACTO_CLIENTE", "DIRECCION_DE_INSTALACION"
 ]
 
 # 🚀 Columnas que el frontend realmente consume desde reiteros_raw.
@@ -116,11 +118,6 @@ def _cargar_o_procesar_parquet(nombre_mes: Optional[str] = None):
         excel_path = "data_sources/Reitero_Junio.xlsx"
         parquet_path = "data_sources/reitero_junio.parquet"
 
-    # 🚨 CORRECCIÓN DE BUG: antes, si el mes pedido no tenía ni parquet ni Excel,
-    # el código caía SILENCIOSAMENTE al archivo de Junio, devolviendo datos de
-    # un mes distinto al solicitado sin avisar a nadie (ni error, ni log claro).
-    # Esto podía hacer que la UI mostrara información de otro mes disfrazada
-    # de la que el usuario acababa de pedir. Ahora se lanza un error explícito.
     if not os.path.exists(parquet_path) and not os.path.exists(excel_path):
         raise HTTPException(
             status_code=404,
@@ -135,7 +132,9 @@ def _cargar_o_procesar_parquet(nombre_mes: Optional[str] = None):
     if reconstruir:
         dtypes_iniciales = {
             "TOA_EXTERNAL_ID": str, "TOA_EXTERNAL_ID_PADRE": str, "TOA_CAJA": str, 
-            "COORDENADAS": str, "ACCESS_ID": str, "ACCESS_ID_PADRE": str, "EXCLUSION": str
+            "COORDENADAS": str, "ACCESS_ID": str, "ACCESS_ID_PADRE": str, "EXCLUSION": str,
+            # 🆕 Forzados a str para no perder ceros a la izquierda ni caer en notación científica
+            "TELEFONO_CONTACTO_CLIENTE": str
         }
         df = pd.read_excel(excel_path, usecols=COLUMNAS_REQUERIDAS_REITERO, dtype=dtypes_iniciales)
         
@@ -155,7 +154,14 @@ def _cargar_o_procesar_parquet(nombre_mes: Optional[str] = None):
         for col in ["VISION", "DEPARTAMENTO", "CIUDAD", "TOA_PROVIDER_SOURCE", "TOA_PROVIDER_SOURCE_PADRE", "TOA_CAJA", "COORDENADAS"]:
             if col in df.columns:
                 df[col] = df[col].fillna("SIN ESPECIFICAR").astype(str).str.strip().str.upper()
-                
+
+        # 🆕 Datos del titular: se limpian pero SIN mayúsculas forzadas, para no
+        # deformar nombres propios ni direcciones al mostrarlos en pantalla.
+        for col in ["NOMBRE_CLIENTE", "TELEFONO_CONTACTO_CLIENTE", "DIRECCION_DE_INSTALACION"]:
+            if col in df.columns:
+                df[col] = df[col].fillna("SIN ESPECIFICAR").astype(str).str.strip()
+                df[col] = df[col].replace(["nan", "NAN", "null", "NULL", "None", ""], "SIN ESPECIFICAR")
+
         df["FECHA_CREACION_DATETIME"] = pd.to_datetime(df["FECHA_CREACION"], errors="coerce")
         df["Dia_Ingreso"] = df["FECHA_CREACION_DATETIME"].dt.day
         df["Mes_Ingreso"] = df["FECHA_CREACION_DATETIME"].dt.month
@@ -176,14 +182,59 @@ def obtener_reitero_optimizados(nombre_mes: Optional[str] = None):
     return _cargar_o_procesar_parquet(nombre_mes)
 
 
+# 🚀 Filtros comunes reutilizados por /reitero y /reitero/reiterativos, para no
+# duplicar esta lógica en dos endpoints distintos.
+def _filtrar_dataframe_reitero(df_base, mes, dia_inicio, dia_fin, departamento, vision, tecnico, origen, cto):
+    df_filtrado = df_base.copy()
+    if mes and mes in meses_mapeo:
+        df_filtrado = df_filtrado[df_filtrado["Mes_Ingreso"] == meses_mapeo[mes]]
+    if dia_inicio is not None:
+        df_filtrado = df_filtrado[df_filtrado["Dia_Ingreso"] >= dia_inicio]
+    if dia_fin is not None:
+        df_filtrado = df_filtrado[df_filtrado["Dia_Ingreso"] <= dia_fin]
+    if departamento:
+        df_filtrado = df_filtrado[df_filtrado["DEPARTAMENTO"] == departamento.strip().upper()]
+    if vision:
+        df_filtrado = df_filtrado[df_filtrado["VISION"] == vision.strip().upper()]
+    if tecnico:
+        tecnico_upper = tecnico.strip().upper()
+        df_filtrado = df_filtrado[(df_filtrado["TOA_PROVIDER_SOURCE"] == tecnico_upper) | (df_filtrado["TOA_PROVIDER_SOURCE_PADRE"] == tecnico_upper)]
+    if origen:
+        df_filtrado = df_filtrado[df_filtrado["Origen_Averia"] == origen.strip().upper()]
+    if cto:
+        df_filtrado = df_filtrado[df_filtrado["TOA_CAJA"] == cto.strip().upper()]
+    return df_filtrado
+
+
+# 🚀 Sustitución de causales nulas, reutilizada por ambos endpoints.
+def _resolver_causales_nulas(df_filtrado):
+    columnas_causales_hijas = ["TOA_APERTURA_AVERIA", "TOA_CIERRE_AVERIA"]
+    columnas_causales_padres = ["TOA_APERTURA_AVERIA_PADRE", "TOA_CIERRE_AVERIA_PADRE"]
+
+    for col in columnas_causales_hijas:
+        if col in df_filtrado.columns:
+            df_filtrado[col] = df_filtrado[col].replace(["nan", "NAN", "null", "NULL", "None", ""], None)
+            mask_nulo = df_filtrado[col].isna()
+            if mask_nulo.any():
+                estado_lower = df_filtrado["TOA_ESTADO_FINAL"].fillna("").str.strip().str.lower()
+                df_filtrado.loc[mask_nulo & estado_lower.isin(["asignado", "agendada", "suspendida"]), col] = "AVERIA ABIERTA"
+                df_filtrado.loc[mask_nulo & (estado_lower == "cancelada"), col] = "CANCELADA"
+                df_filtrado.loc[mask_nulo & (estado_lower == "no realizada"), col] = "NO REALIZADA"
+
+    for col in columnas_causales_padres:
+        if col in df_filtrado.columns:
+            df_filtrado[col] = df_filtrado[col].replace(["nan", "NAN", "null", "NULL", "None", ""], None)
+            mask_nulo = df_filtrado[col].isna()
+            if mask_nulo.any():
+                estado_padre_lower = df_filtrado["ESTADO_FINAL_PADRE"].fillna("").str.strip().str.lower()
+                df_filtrado.loc[mask_nulo & estado_padre_lower.isin(["asignado", "agendada", "suspendida"]), col] = "AVERIA ABIERTA"
+                df_filtrado.loc[mask_nulo & (estado_padre_lower == "cancelada"), col] = "CANCELADA"
+                df_filtrado.loc[mask_nulo & (estado_padre_lower == "no realizada"), col] = "NO REALIZADA"
+
+    return df_filtrado
+
+
 def _calcular_causales_ultimas_vectorizado(df_filtrado, df_reiteros_only):
-    """
-    🚀 Reemplaza el loop `for nombre_causal, group in df_filtrado.groupby(...)`
-    que hacía un groupby+agg ANIDADO por cada causal (lento y O(n_causales)
-    llamadas a pandas). Ahora se hacen 2 groupbys GLOBALES (uno para los
-    totales por causal, otro para el desglose de CAIs) y solo se itera sobre
-    el resultado ya agregado, que es mucho más pequeño.
-    """
     agg_causales = df_filtrado.groupby("TOA_CIERRE_AVERIA", as_index=False).agg(
         Averias=("AVERIA", "sum"),
         Reiteros=("REITERO", "sum")
@@ -225,7 +276,6 @@ def _calcular_causales_ultimas_vectorizado(df_filtrado, df_reiteros_only):
 
 
 def _calcular_causales_padres_vectorizado(df_reiteros_only):
-    """🚀 Misma optimización que causales_ultimas, aplicada a las causales padre."""
     if df_reiteros_only.empty:
         return []
 
@@ -269,7 +319,6 @@ def _calcular_causales_padres_vectorizado(df_reiteros_only):
 
 
 def _calcular_seg_rangos_vectorizado(df_reiteros_only):
-    """🚀 Misma optimización aplicada a la distribución por rango de días."""
     if df_reiteros_only.empty:
         return []
 
@@ -329,51 +378,9 @@ def informe_reitero(
 
     calendario_por_mes = obtener_calendario_estatico()
 
-    # --- 🌊 FILTROS VECTORIZADOS ---
-    df_filtrado = df_base.copy()
-    if mes and mes in meses_mapeo:
-        df_filtrado = df_filtrado[df_filtrado["Mes_Ingreso"] == meses_mapeo[mes]]
-    if dia_inicio is not None:
-        df_filtrado = df_filtrado[df_filtrado["Dia_Ingreso"] >= dia_inicio]
-    if dia_fin is not None:
-        df_filtrado = df_filtrado[df_filtrado["Dia_Ingreso"] <= dia_fin]
-    if departamento:
-        df_filtrado = df_filtrado[df_filtrado["DEPARTAMENTO"] == departamento.strip().upper()]
-    if vision:
-        df_filtrado = df_filtrado[df_filtrado["VISION"] == vision.strip().upper()]
-    if tecnico:
-        tecnico_upper = tecnico.strip().upper()
-        df_filtrado = df_filtrado[(df_filtrado["TOA_PROVIDER_SOURCE"] == tecnico_upper) | (df_filtrado["TOA_PROVIDER_SOURCE_PADRE"] == tecnico_upper)]
-    if origen:
-        df_filtrado = df_filtrado[df_filtrado["Origen_Averia"] == origen.strip().upper()]
-    if cto:
-        df_filtrado = df_filtrado[df_filtrado["TOA_CAJA"] == cto.strip().upper()]
+    df_filtrado = _filtrar_dataframe_reitero(df_base, mes, dia_inicio, dia_fin, departamento, vision, tecnico, origen, cto)
+    df_filtrado = _resolver_causales_nulas(df_filtrado)
 
-    # --- 🧪 TRATAMIENTO Y SUSTITUCIÓN DE CAUSALES NULAS SEGÚN EL ESTADO ---
-    columnas_causales_hijas = ["TOA_APERTURA_AVERIA", "TOA_CIERRE_AVERIA"]
-    columnas_causales_padres = ["TOA_APERTURA_AVERIA_PADRE", "TOA_CIERRE_AVERIA_PADRE"]
-
-    for col in columnas_causales_hijas:
-        if col in df_filtrado.columns:
-            df_filtrado[col] = df_filtrado[col].replace(["nan", "NAN", "null", "NULL", "None", ""], None)
-            mask_nulo = df_filtrado[col].isna()
-            if mask_nulo.any():
-                estado_lower = df_filtrado["TOA_ESTADO_FINAL"].fillna("").str.strip().str.lower()
-                df_filtrado.loc[mask_nulo & estado_lower.isin(["asignado", "agendada", "suspendida"]), col] = "AVERIA ABIERTA"
-                df_filtrado.loc[mask_nulo & (estado_lower == "cancelada"), col] = "CANCELADA"
-                df_filtrado.loc[mask_nulo & (estado_lower == "no realizada"), col] = "NO REALIZADA"
-
-    for col in columnas_causales_padres:
-        if col in df_filtrado.columns:
-            df_filtrado[col] = df_filtrado[col].replace(["nan", "NAN", "null", "NULL", "None", ""], None)
-            mask_nulo = df_filtrado[col].isna()
-            if mask_nulo.any():
-                estado_padre_lower = df_filtrado["ESTADO_FINAL_PADRE"].fillna("").str.strip().str.lower()
-                df_filtrado.loc[mask_nulo & estado_padre_lower.isin(["asignado", "agendada", "suspendida"]), col] = "AVERIA ABIERTA"
-                df_filtrado.loc[mask_nulo & (estado_padre_lower == "cancelada"), col] = "CANCELADA"
-                df_filtrado.loc[mask_nulo & (estado_padre_lower == "no realizada"), col] = "NO REALIZADA"
-
-    # --- 📊 MÉTRICAS GENERALES ---
     total_averias = int(df_filtrado["AVERIA"].sum())
     total_reiteros = int(df_filtrado["REITERO"].sum())
     tasa_reitero_global = round((total_reiteros / total_averias * 100), 2) if total_averias > 0 else 0.0
@@ -384,10 +391,8 @@ def informe_reitero(
 
     df_reiteros_only = df_filtrado[df_filtrado["REITERO"] == 1]
 
-    # --- 🎯 DISTRIBUCIÓN POR RANGOS DE DÍAS (vectorizado) ---
     seg_rangos = _calcular_seg_rangos_vectorizado(df_reiteros_only)
 
-    # --- RANKING TÉCNICOS ---
     tecnicos_atendidas = df_filtrado.groupby(["TOA_PROVIDER_SOURCE", "DEPARTAMENTO"], as_index=False).agg(Averias_Atendidas=("AVERIA", "sum")).rename(columns={"TOA_PROVIDER_SOURCE": "Tecnico"})
     tecnicos_causados = df_reiteros_only.groupby(["TOA_PROVIDER_SOURCE_PADRE", "DEPARTAMENTO"], as_index=False).agg(Reiteros_Causados=("REITERO", "sum")).rename(columns={"TOA_PROVIDER_SOURCE_PADRE": "Tecnico"})
 
@@ -405,12 +410,10 @@ def informe_reitero(
         Reiteros_Ingresados=("REITERO", "sum")
     ).sort_values(["Mes_Ingreso", "Dia_Ingreso"])
 
-    # --- 🧪 CAUSALES Y CAIs (vectorizado) ---
     causales_ultimas = _calcular_causales_ultimas_vectorizado(df_filtrado, df_reiteros_only)
     causales_padres = _calcular_causales_padres_vectorizado(df_reiteros_only)
     causales_tasa = sorted([c for c in causales_ultimas if c["Averias"] >= 3], key=lambda x: x["Tasa_Reitero"], reverse=True)
 
-    # --- 🧹 SERIALIZACIÓN MASIVA OPTIMIZADA Y BLINDADA ---
     df_filtrado_limpio = df_filtrado.copy()
     columnas_fecha = ["FECHA_CREACION", "TOA_FECHA_DE_CIERRE_FINAL", "FECHA_CREACION_DATETIME", "FECHA_CIERRE_PADRE"]
     
@@ -461,4 +464,110 @@ def informe_reitero(
             "causales_padres": causales_padres,
             "causales_tasa": causales_tasa
         }
+    }
+
+
+# ========================================================
+# 🆕 ENDPOINT: SERVICIOS REITERATIVOS (por cantidad exacta de reiteros)
+# ========================================================
+@router.get("/reitero/reiterativos")
+def reitero_reiterativos(
+    # 🔧 Ahora es OPCIONAL: si no se envía, el endpoint solo calcula la
+    # distribución disponible (cantidades de reiteros que existen en los
+    # datos actuales), sin construir la lista de servicios. Esto permite que
+    # el frontend pida primero "qué cantidades hay datos" para mostrar los
+    # chips seleccionables, sin tener que adivinar un valor inicial.
+    veces_reitero: Optional[int] = Query(None, ge=1, description="Cantidad EXACTA de reiteros que debe tener el CAI para incluirlo"),
+    mes: Optional[str] = None,
+    dia_inicio: Optional[int] = None,
+    dia_fin: Optional[int] = None,
+    departamento: Optional[str] = None,
+    vision: Optional[str] = None,
+    tecnico: Optional[str] = None,
+    origen: Optional[str] = None,
+    cto: Optional[str] = None
+):
+    df_base = obtener_reitero_optimizados(mes)
+    df_filtrado = _filtrar_dataframe_reitero(df_base, mes, dia_inicio, dia_fin, departamento, vision, tecnico, origen, cto)
+    df_filtrado = _resolver_causales_nulas(df_filtrado)
+
+    df_reiteros_only = df_filtrado[df_filtrado["REITERO"] == 1].copy()
+
+    if df_reiteros_only.empty:
+        return {
+            "veces_reitero_solicitado": veces_reitero,
+            "total_servicios": 0,
+            "servicios": [],
+            "distribucion_disponible": []
+        }
+
+    # 🎯 Conteo de reiteros por CAI (ACCESS_ID = identificador único del servicio)
+    conteo_por_cai = df_reiteros_only.groupby("ACCESS_ID").size()
+
+    # Cantidades de reiteros que SÍ existen en los datos actuales, para que
+    # el frontend arme los chips seleccionables sin adivinar.
+    distribucion_disponible = sorted(int(v) for v in conteo_por_cai.unique().tolist())
+
+    # Si no se pidió una cantidad específica, devolvemos solo la distribución
+    # (sin hacer el trabajo de construir el detalle de servicios).
+    if veces_reitero is None:
+        return {
+            "veces_reitero_solicitado": None,
+            "total_servicios": 0,
+            "servicios": [],
+            "distribucion_disponible": distribucion_disponible
+        }
+
+    cais_seleccionados = conteo_por_cai[conteo_por_cai == veces_reitero].index.tolist()
+
+    if not cais_seleccionados:
+        return {
+            "veces_reitero_solicitado": veces_reitero,
+            "total_servicios": 0,
+            "servicios": [],
+            "distribucion_disponible": distribucion_disponible
+        }
+
+    df_candidatos = df_reiteros_only[df_reiteros_only["ACCESS_ID"].isin(cais_seleccionados)].copy()
+    df_candidatos["FECHA_CIERRE_PADRE"] = pd.to_datetime(df_candidatos["FECHA_CIERRE_PADRE"], errors="coerce")
+
+    # 🆕 Ya NO nos quedamos solo con la última orden: se conserva el detalle
+    # de las N órdenes reiterativas de cada CAI, ordenadas de la más reciente
+    # a la más antigua, para que el frontend pueda mostrar el historial
+    # completo de cada servicio reiterativo.
+    df_candidatos = df_candidatos.sort_values(["ACCESS_ID", "FECHA_CIERRE_PADRE"], ascending=[True, False])
+    df_candidatos = df_candidatos.replace({np.nan: None, pd.NaT: None})
+    df_candidatos = df_candidatos.where(pd.notnull(df_candidatos), None)
+
+    columnas_datos_cliente = ["NOMBRE_CLIENTE", "TELEFONO_CONTACTO_CLIENTE", "DIRECCION_DE_INSTALACION", "CIUDAD", "DEPARTAMENTO", "TOA_CAJA"]
+    columnas_datos_cliente = [c for c in columnas_datos_cliente if c in df_candidatos.columns]
+
+    servicios = []
+    for cai, grupo in df_candidatos.groupby("ACCESS_ID"):
+        primera_fila = grupo.iloc[0]
+
+        ordenes = []
+        for _, fila in grupo.iterrows():
+            fecha = fila.get("FECHA_CIERRE_PADRE")
+            ordenes.append({
+                "TECNICO": fila.get("TOA_PROVIDER_SOURCE_PADRE"),
+                "CAUSAL": fila.get("TOA_CIERRE_AVERIA_PADRE"),
+                "FECHA": fecha.strftime('%Y-%m-%d %H:%M:%S') if pd.notnull(fecha) else None,
+                "DIAS_REITERO": fila.get("DIAS_REITERO")
+            })
+
+        servicio = {"CAI": cai}
+        for col in columnas_datos_cliente:
+            servicio[col] = primera_fila.get(col)
+        servicio["veces_reitero"] = len(ordenes)
+        servicio["ordenes"] = ordenes
+        servicios.append(servicio)
+
+    servicios = sorted(servicios, key=lambda s: s.get("NOMBRE_CLIENTE") or "")
+
+    return {
+        "veces_reitero_solicitado": veces_reitero,
+        "total_servicios": len(servicios),
+        "servicios": servicios,
+        "distribucion_disponible": distribucion_disponible
     }

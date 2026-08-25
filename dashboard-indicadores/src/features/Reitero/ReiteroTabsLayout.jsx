@@ -5,6 +5,7 @@ import CausalReitero from './CausalReitero';
 import RankingTecnicosReitero from './RankingTecnicosReitero';
 import OrigenReitero from './OrigenReitero';
 import MapaOrdenes from './MapaOrdenes';
+import ReiterativosPanel from './ReiterativosPanel';
 import { procesarReitero } from '../../utils/dataProcessor';
 
 // 📊 COMPONENTES ANALÍTICOS
@@ -15,7 +16,7 @@ import ReiteroDiasTable from './ReiteroDiasTable';
 
 export default function ReiteroTabsLayout({
   reiteroData, loadingReitero, filtersReitero, settersReitero, actionsReitero, filtrosDisponibles,
-  reintentandoReitero, reiteroError, reintentarReitero
+  reintentandoReitero, reiteroError, reintentarReitero, apiBaseUrl
 }) {
   const [activeSubTab, setActiveSubTab] = useState('GENERAL');
 
@@ -67,8 +68,10 @@ export default function ReiteroTabsLayout({
       />
 
       {/* 🚨 Aviso de datos desactualizados + botón para reintentar el MISMO
-          filtro sin tener que cambiarlo y volver a cambiarlo. */}
-      {reiteroError && !loadingReitero && (
+          filtro sin tener que cambiarlo y volver a cambiarlo. Solo aplica a
+          las sub-pestañas que dependen de reiteroData (no a Reiterativos,
+          que hace su propio fetch independiente). */}
+      {reiteroError && !loadingReitero && activeSubTab !== 'REITERATIVOS' && (
         <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl p-3">
           <div className="flex items-start gap-2">
             <span>🚨</span>
@@ -217,8 +220,16 @@ export default function ReiteroTabsLayout({
           </div>
         )}
 
-        {/* === OTRAS PESTAÑAS (FALLBACK) === */}
-        {!['GENERAL', 'TECNICOS', 'CAUSALES', 'MAPA', 'ORIGEN', 'RANGO'].includes(activeSubTab) && (
+        {/* === SUB-PESTAÑA: REITERATIVOS (🆕 clientes/servicios que más reiteran) === */}
+        {activeSubTab === 'REITERATIVOS' && (
+          <ReiterativosPanel
+            apiBaseUrl={apiBaseUrl}
+            filtersReitero={filtersReitero}
+          />
+        )}
+
+        {/* === OTRAS PESTAÑAS (FALLBACK, ya no debería activarse nunca) === */}
+        {!['GENERAL', 'TECNICOS', 'CAUSALES', 'MAPA', 'ORIGEN', 'RANGO', 'REITERATIVOS'].includes(activeSubTab) && (
           <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center text-slate-400 text-xs font-light animate-fadeIn">
             Módulo <span className="font-mono text-blue-600 font-semibold">{activeSubTab}</span> en desarrollo.
           </div>
