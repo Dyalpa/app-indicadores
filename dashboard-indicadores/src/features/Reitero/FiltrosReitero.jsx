@@ -47,6 +47,9 @@ export default function FiltrosReitero({
           setDiaInicio={setters.setDiaInicio}
           diasCalendario={diasCalendarioReitero} 
           setDiaFin={setters.setDiaFin}
+          // 🆕 Hasta qué día del mes hay datos reales, para marcar/bloquear
+          // los días posteriores en el calendario del filtro.
+          ultimoDiaConDatos={reiteroData?.filtros_disponibles?.ultimo_dia_con_datos ?? reiteroData?.fuente_metadatos?.ultimo_dia_con_datos}
         />
       </div>
     </div>

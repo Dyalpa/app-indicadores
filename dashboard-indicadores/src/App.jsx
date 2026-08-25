@@ -54,9 +54,15 @@ export default function App() {
     if (activeTab === 'REITERO' && reiteroData?.fuente_metadatos) {
       const metaReitero = reiteroData.fuente_metadatos;
       return {
-        total_registros: metaReitero.total_registros,
+        // 🐛 Corrección: el backend de reitero expone "total_registros_validos",
+        // no "total_registros" — antes esto siempre mostraba "Cargando..." en
+        // la pestaña de Reitero.
+        total_registros: metaReitero.total_registros_validos,
         archivo: metaReitero.fuente ?? "Desconocido",
-        ultima_actualizacion: metaReitero.fecha_actualizacion ?? "N/A"
+        ultima_actualizacion: metaReitero.fecha_actualizacion ?? "N/A",
+        // 🆕 Hasta qué día hay información real cargada
+        ultimo_dia_con_datos: metaReitero.ultimo_dia_con_datos ?? null,
+        fecha_maxima_datos: metaReitero.fecha_maxima_datos ?? null
       };
     }
     return data?.fuente_metadatos;

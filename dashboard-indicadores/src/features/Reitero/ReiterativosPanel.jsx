@@ -1,6 +1,51 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 
+// 🔁 Mismo helper de reintentos + timeout por intento + cancelación externa
+// que usa el resto de Reitero (useDashboardState.js), para que el
+// comportamiento ante un túnel inestable sea consistente en toda la sección.
+async function fetchConReintentosConAviso(url, opciones = {}, maxIntentos = 3, esperaMs = 500, onReintento, timeoutMs = 6000, externalSignal) {
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    if (externalSignal?.aborted) {
+      throw new DOMException('Cancelado por un filtro más reciente', 'AbortError');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    externalSignal?.addEventListener('abort', onExternalAbort);
+
+    try {
+      const respuesta = await fetch(url, { ...opciones, signal: controller.signal });
+      clearTimeout(timeoutId);
+      externalSignal?.removeEventListener('abort', onExternalAbort);
+
+      if ([502, 503, 504].includes(respuesta.status)) {
+        throw new Error(`Error de túnel HTTP: ${respuesta.status}`);
+      }
+      return respuesta;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      externalSignal?.removeEventListener('abort', onExternalAbort);
+
+      if (externalSignal?.aborted) {
+        throw new DOMException('Cancelado por un filtro más reciente', 'AbortError');
+      }
+
+      if (intento === maxIntentos) {
+        throw new Error(`No se pudo conectar tras ${maxIntentos} intentos.`);
+      }
+      if (onReintento) onReintento(intento, maxIntentos);
+
+      await new Promise(resolve => setTimeout(resolve, esperaMs));
+      if (externalSignal?.aborted) {
+        throw new DOMException('Cancelado por un filtro más reciente', 'AbortError');
+      }
+      esperaMs *= 1.5;
+    }
+  }
+}
+
 export default function ReiterativosPanel({ apiBaseUrl, filtersReitero }) {
   // 🔧 Extraemos los valores PRIMITIVOS del objeto filtersReitero. Este objeto
   // se recrea en cada render del padre (useDashboardState devuelve un literal
@@ -20,6 +65,9 @@ export default function ReiterativosPanel({ apiBaseUrl, filtersReitero }) {
   // 🔁 Contador para forzar un reintento real (cambiar el estado al mismo
   // valor no dispara el efecto de nuevo en React)
   const [retryTick, setRetryTick] = useState(0);
+  // ⚠️ Se activa cuando fetchConReintentosConAviso entra a un intento 2 o
+  // superior — mismo indicador visual que el resto de Reitero.
+  const [reintentando, setReintentando] = useState(false);
 
   const construirQueryBase = useCallback(() => {
     const params = new URLSearchParams();
@@ -45,11 +93,17 @@ export default function ReiterativosPanel({ apiBaseUrl, filtersReitero }) {
       setCargando(true);
       setError(null);
       setDatos(null);
+      setReintentando(false);
       try {
         const params = construirQueryBase();
-        const res = await fetch(`${apiBaseUrl}/api/reitero/reiterativos?${params.toString()}`, { signal: controller.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
+        const respuesta = await fetchConReintentosConAviso(
+          `${apiBaseUrl}/api/reitero/reiterativos?${params.toString()}`,
+          {}, 4, 800,
+          () => { if (!controller.signal.aborted) setReintentando(true); },
+          12000,
+          controller.signal
+        );
+        const json = await respuesta.json();
         if (controller.signal.aborted) return;
 
         setDistribucion(json.distribucion_disponible || []);
@@ -60,7 +114,10 @@ export default function ReiterativosPanel({ apiBaseUrl, filtersReitero }) {
         console.error('Error cargando distribución de reiterativos:', err);
         setError('No se pudo cargar la distribución de reiteros disponibles.');
       } finally {
-        if (!controller.signal.aborted) setCargando(false);
+        if (!controller.signal.aborted) {
+          setReintentando(false);
+          setCargando(false);
+        }
       }
     }
 
@@ -78,12 +135,18 @@ export default function ReiterativosPanel({ apiBaseUrl, filtersReitero }) {
     async function cargarServicios() {
       setCargando(true);
       setError(null);
+      setReintentando(false);
       try {
         const params = construirQueryBase();
         params.append('veces_reitero', vecesReitero);
-        const res = await fetch(`${apiBaseUrl}/api/reitero/reiterativos?${params.toString()}`, { signal: controller.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
+        const respuesta = await fetchConReintentosConAviso(
+          `${apiBaseUrl}/api/reitero/reiterativos?${params.toString()}`,
+          {}, 4, 800,
+          () => { if (!controller.signal.aborted) setReintentando(true); },
+          12000,
+          controller.signal
+        );
+        const json = await respuesta.json();
         if (controller.signal.aborted) return;
 
         setDatos(json);
@@ -94,7 +157,10 @@ export default function ReiterativosPanel({ apiBaseUrl, filtersReitero }) {
         console.error('Error cargando servicios reiterativos:', err);
         setError('No se pudo cargar la información de servicios reiterativos. Intenta nuevamente.');
       } finally {
-        if (!controller.signal.aborted) setCargando(false);
+        if (!controller.signal.aborted) {
+          setReintentando(false);
+          setCargando(false);
+        }
       }
     }
 
@@ -200,7 +266,9 @@ export default function ReiterativosPanel({ apiBaseUrl, filtersReitero }) {
       {cargando ? (
         <div className="flex h-64 flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 gap-2 shadow-sm">
           <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-400 font-light text-xs">Buscando servicios reiterativos...</p>
+          <p className={`font-light text-xs ${reintentando ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+            {reintentando ? '⚠️ Conexión inestable, reintentando...' : 'Buscando servicios reiterativos...'}
+          </p>
         </div>
       ) : datos ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

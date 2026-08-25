@@ -430,12 +430,24 @@ def informe_reitero(
 
     excel_usado = f"Reitero_{mes.capitalize()}.xlsx" if mes and mes in meses_mapeo else "Reitero_Junio.xlsx"
 
+    # 🆕 Hasta qué día del mes hay información real cargada (no confundir con
+    # el calendario estático de 1 a 30/31, que muestra TODOS los días del mes
+    # sin importar si hay datos o no). Se calcula sobre df_base (el dataset
+    # completo del mes seleccionado, sin los filtros de día/depto/etc. del
+    # usuario) para reflejar el corte real de la fuente, no del filtro actual.
+    fecha_maxima_datos = pd.to_datetime(df_base["FECHA_CREACION"], errors="coerce").max()
+    ultimo_dia_con_datos = int(fecha_maxima_datos.day) if pd.notnull(fecha_maxima_datos) else None
+    fecha_maxima_datos_str = fecha_maxima_datos.strftime('%Y-%m-%d') if pd.notnull(fecha_maxima_datos) else None
+
     fuente_metadatos = {
         "fuente": excel_usado,
         "total_registros_validos": len(df_base),
         "filtrados_en_vista": len(df_filtrado),
         "fecha_actualizacion": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        "detalles": f"Módulo Control de Reiteros | {total_averias:,} Averías"
+        "detalles": f"Módulo Control de Reiteros | {total_averias:,} Averías",
+        # 🆕 Para mostrar en metadatos: "Información actualizada hasta el día X"
+        "ultimo_dia_con_datos": ultimo_dia_con_datos,
+        "fecha_maxima_datos": fecha_maxima_datos_str
     }
 
     return {
@@ -452,7 +464,10 @@ def informe_reitero(
             "ctos": ctos_lista,
             "tecnicos": tecnicos_lista,
             "meses": meses_disponibles_lista,
-            "calendario_por_mes": calendario_por_mes
+            "calendario_por_mes": calendario_por_mes,
+            # 🆕 Redundante con fuente_metadatos, pero cómodo aquí para que el
+            # calendario del filtro (CalendarFranjaGlobal) lo consuma directo.
+            "ultimo_dia_con_datos": ultimo_dia_con_datos
         },
         "segmentacion_vision": seg_vision.to_dict(orient="records"),
         "distribucion_rangos_dias": seg_rangos,

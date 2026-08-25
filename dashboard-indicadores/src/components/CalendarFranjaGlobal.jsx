@@ -7,7 +7,11 @@ export default function CalendarFranjaGlobal({
   selectedMes, 
   diasCalendario, 
   setDiaInicio, 
-  setDiaFin 
+  setDiaFin,
+  // 🆕 Último día del mes con información real (viene del backend). Si es
+  // null/undefined, se asume que no hay corte y se muestra todo el mes igual
+  // que antes.
+  ultimoDiaConDatos
 }) {
 
   const mesesIndices = {
@@ -65,12 +69,21 @@ export default function CalendarFranjaGlobal({
     // Solo forzamos el rango completo si el mes cambió en comparación con la última inicialización
     if (selectedMes && mesInicializadoRef.current !== selectedMes && diasReales.length > 0) {
       mesInicializadoRef.current = selectedMes; // Registramos que este mes ya se cuadró
+      const ultimoDiaDisponible = diasReales[diasReales.length - 1].Dia_Del_Mes;
+      // 🆕 Si hay un corte de datos real, el rango inicial no debe irse más
+      // allá de ese día, aunque el calendario visual muestre el mes completo.
+      const finReal = ultimoDiaConDatos && ultimoDiaConDatos < ultimoDiaDisponible
+        ? ultimoDiaConDatos
+        : ultimoDiaDisponible;
       setDiaInicio(1);
-      setDiaFin(diasReales[diasReales.length - 1].Dia_Del_Mes);
+      setDiaFin(finReal);
     }
   }, [selectedMes, diasCalendario]); // Ya no depende de diaInicio, evitando bucles al hacer clic
 
   const gestionarClickLocal = (diaNum) => {
+    // 🆕 No permitir seleccionar días posteriores al corte de datos real
+    if (ultimoDiaConDatos && diaNum > ultimoDiaConDatos) return;
+
     if (diaInicio === diaFin && diaNum > diaInicio) {
       setDiaFin(diaNum);
     } else {
@@ -81,17 +94,29 @@ export default function CalendarFranjaGlobal({
 
   const seleccionarMesCompletoLocal = () => {
     if (diasReales.length > 0) {
+      const ultimoDiaDisponible = diasReales[diasReales.length - 1].Dia_Del_Mes;
+      const finReal = ultimoDiaConDatos && ultimoDiaConDatos < ultimoDiaDisponible
+        ? ultimoDiaConDatos
+        : ultimoDiaDisponible;
       setDiaInicio(1); 
-      setDiaFin(diasReales[diasReales.length - 1].Dia_Del_Mes);
+      setDiaFin(finReal);
     }
   };
 
   return (
     <div className="space-y-3 pt-2">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs font-bold text-slate-600">
-        <span className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg border border-blue-100 shadow-sm">
-          📅 Rango Actual: {diaInicio === diaFin ? `Día ${diaInicio}` : `Días del ${diaInicio} al ${diaFin}`} de {selectedMes}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg border border-blue-100 shadow-sm">
+            📅 Rango Actual: {diaInicio === diaFin ? `Día ${diaInicio}` : `Días del ${diaInicio} al ${diaFin}`} de {selectedMes}
+          </span>
+          {/* 🆕 Indicador de hasta qué día hay información real cargada */}
+          {ultimoDiaConDatos && (
+            <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg border border-emerald-100 shadow-sm">
+              ✅ Información actualizada hasta el día {ultimoDiaConDatos}
+            </span>
+          )}
+        </div>
         {(diaInicio !== 1 || diaFin !== diasReales.length) && (
           <button 
             type="button"
@@ -115,29 +140,38 @@ export default function CalendarFranjaGlobal({
           
           const estaEnRango = dia >= diaInicio && dia <= diaFin;
           const esExtremo = dia === diaInicio || dia === diaFin;
+          // 🆕 Día posterior al corte real de datos: se muestra deshabilitado
+          const sinDatos = Boolean(ultimoDiaConDatos) && dia > ultimoDiaConDatos;
 
           return (
             <div 
               key={`gbl-day-${dia}`}
               onClick={() => gestionarClickLocal(dia)}
-              className={`flex flex-col items-center justify-center p-1 rounded-md border cursor-pointer transition-all text-center
-                w-[calc(100%/8-4px)] min-w-[30px] sm:w-auto sm:min-w-[34px] h-11 select-none outline-none
-                ${estaEnRango 
-                  ? esFestivoReitero 
-                    ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold' 
-                    : 'bg-blue-50 border-blue-300 text-blue-700 font-bold'    
-                  : esFestivoReitero 
-                    ? 'bg-amber-50/60 border-amber-200 text-amber-800 hover:bg-amber-100' 
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'    
+              title={sinDatos ? 'Sin información cargada para este día' : undefined}
+              className={`flex flex-col items-center justify-center p-1 rounded-md border text-center
+                w-[calc(100%/8-4px)] min-w-[30px] sm:w-auto sm:min-w-[34px] h-11 select-none outline-none transition-all
+                ${sinDatos
+                  ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-60'
+                  : `cursor-pointer ${
+                      estaEnRango 
+                        ? esFestivoReitero 
+                          ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold' 
+                          : 'bg-blue-50 border-blue-300 text-blue-700 font-bold'    
+                        : esFestivoReitero 
+                          ? 'bg-amber-50/60 border-amber-200 text-amber-800 hover:bg-amber-100' 
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'    
+                    }`
                 }
-                ${esExtremo && estaEnRango ? 'ring-2 ring-blue-400 ring-offset-0 font-black' : ''}
+                ${esExtremo && estaEnRango && !sinDatos ? 'ring-2 ring-blue-400 ring-offset-0 font-black' : ''}
               `}
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >
               <span className={`text-[9px] uppercase font-bold tracking-tight mb-0.5 
-                ${estaEnRango 
-                  ? esFestivoReitero ? 'text-amber-700' : 'text-blue-500' 
-                  : esFestivoReitero ? 'text-amber-600' : 'text-slate-400'
+                ${sinDatos
+                  ? 'text-slate-300'
+                  : estaEnRango 
+                    ? esFestivoReitero ? 'text-amber-700' : 'text-blue-500' 
+                    : esFestivoReitero ? 'text-amber-600' : 'text-slate-400'
                 }
               `}>
                 {item.Inicial_Es || item.inicial_es}
