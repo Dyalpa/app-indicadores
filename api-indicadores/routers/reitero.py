@@ -112,18 +112,18 @@ def obtener_calendario_estatico():
 # 🚀 LÓGICA INTERNA DE CARGA
 def _cargar_o_procesar_parquet(nombre_mes: Optional[str] = None):
     if nombre_mes:
-        excel_path = f"data_sources/Reitero_{nombre_mes.capitalize()}.xlsx"
-        parquet_path = f"data_sources/reitero_{nombre_mes.lower()}.parquet"
+        excel_path = f"data_sources/reitero/Reitero_{nombre_mes.capitalize()}.xlsx"
+        parquet_path = f"data_sources/reitero/reitero_{nombre_mes.lower()}.parquet"
     else:
-        excel_path = "data_sources/Reitero_Junio.xlsx"
-        parquet_path = "data_sources/reitero_junio.parquet"
+        excel_path = "data_sources/reitero/Reitero_Junio.xlsx"
+        parquet_path = "data_sources/reitero/reitero_junio.parquet"
 
     if not os.path.exists(parquet_path) and not os.path.exists(excel_path):
         raise HTTPException(
             status_code=404,
             detail=(
                 f"No existe información para el mes '{nombre_mes}'. "
-                f"Se esperaba el archivo '{excel_path}' en data_sources/ y no fue encontrado."
+                f"Se esperaba el archivo '{excel_path}' en data_sources/reitero/ y no fue encontrado."
             )
         )
 
@@ -366,8 +366,8 @@ def informe_reitero(
     tecnicos_lista = sorted(df_base["TOA_PROVIDER_SOURCE"].dropna().unique().tolist())
 
     meses_disponibles_lista = []
-    if os.path.exists("data_sources"):
-        for archivo in os.listdir("data_sources/"):
+    if os.path.exists("data_sources/reitero/"):
+        for archivo in os.listdir("data_sources/reitero/"):
             if archivo.startswith("Reitero_") and archivo.endswith(".xlsx"):
                 nombre_mes_archivo = archivo.replace("Reitero_", "").replace(".xlsx", "").capitalize()
                 if nombre_mes_archivo not in meses_disponibles_lista:

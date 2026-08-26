@@ -8,16 +8,16 @@ from utils.helpers import MESES_ESPANOL, festivos_set, mapa_iniciales
 router = APIRouter()
 
 # 📊 Rutas de Productividad
-EXCEL_FILE = "data_sources/productividad.xlsx"
-PARQUET_FILE = "data_sources/productividad.parquet"
+EXCEL_FILE = "data_sources/productividad/productividad.xlsx"
+PARQUET_FILE = "data_sources/productividad/productividad.parquet"
 
 # 💵 Rutas para el archivo de Precios (Mano de Obra)
-PRECIOS_FILE = "data_sources/precios_mano_obra.xlsx"
-PRECIOS_PARQUET = "data_sources/precios_mano_obra.parquet"
+PRECIOS_FILE = "data_sources/productividad/precios_mano_obra.xlsx"
+PRECIOS_PARQUET = "data_sources/productividad/precios_mano_obra.parquet"
 
 # 📦 Rutas para el archivo de Materiales
-MATERIALES_FILE = "data_sources/materiales_ordenes.xlsx"
-MATERIALES_PARQUET = "data_sources/materiales_ordenes.parquet"
+MATERIALES_FILE = "data_sources/productividad/materiales_ordenes.xlsx"
+MATERIALES_PARQUET = "data_sources/productividad/materiales_ordenes.parquet"
 
 # 📋 Tarifas oficiales indexadas
 MATRIZ_ITEMS = {
