@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from routers import productividad
 from routers import reitero
+from routers import infancia
 
 # 📋 Configuración de logging para medir tiempos de procesamiento reales.
 # Esto nos permite distinguir si el 504 lo causa el backend (lento) o el
@@ -75,6 +76,8 @@ async def log_tiempo_procesamiento(request, call_next):
 # 🗺️ Registro de Rutas Modulares
 app.include_router(productividad.router, prefix="/api", tags=["Productividad"])
 app.include_router(reitero.router, prefix="/api", tags=["Reitero"])
+app.include_router(infancia.router, prefix="/api", tags=["Infancia"])
+
 
 
 @app.get("/")
